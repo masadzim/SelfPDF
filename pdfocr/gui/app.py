@@ -169,7 +169,7 @@ class OcrJob:
 
 class MainWindow(tk.Tk):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(className=APP_TITLE)
         self.title(APP_TITLE)
         self.geometry("1360x860")
         self.minsize(1040, 660)

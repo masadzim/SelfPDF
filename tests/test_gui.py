@@ -84,6 +84,8 @@ def main() -> int:
     print("jendela dibuat")
 
     check("judul jendela benar", app.title() == APP_TITLE, app.title())
+    app_name = app.tk.call("tk", "appname")
+    check("nama aplikasi Tk benar", app_name.casefold() == APP_TITLE.casefold(), app_name)
 
     # Menubar harus widget in-window (bukan tk.Menu native) supaya tidak
     # berkedip di X11/Xwayland, dan semua dropdown-nya terisi.
