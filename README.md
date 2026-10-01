@@ -115,20 +115,24 @@ python3 -m venv .venv
 Kalau `tesseract` belum terpasang, aplikasi tetap jalan — catatan peringatan
 menampilkan perintah instalasinya, dan semua fitur selain OCR tetap berfungsi.
 
-### Ekstensi OCR Rust (eksperimental)
+### Ekstensi OCR Rust (eksperimental, tidak dipakai aplikasi)
 
-Ekstensi opsional ini memakai `ocrs` dan belum menggantikan OCR Tesseract yang
-digunakan GUI. Perlu Rust/Cargo, Python virtual environment, `maturin`, dan dua
-model `ocrs` format `.rten`; model tidak disertakan di repositori.
+Ekstensi ini **tidak dipakai aplikasi ini** dan sudah dipindahkan keluar dari
+repo ke `~/Downloads/selfpdf_ocr/`. Seluruh OCR pada GUI memakai Tesseract
+(`pdfocr/ocr.py`), jadi semua fitur tetap berjalan tanpa folder tersebut.
+
+Eksperimen ini memakai `ocrs`. Perlu Rust/Cargo, virtual environment,
+`maturin`, dan dua model `ocrs` format `.rten`; model tidak disertakan.
+Setelah pindah ke luar repo, aktifkan dulu virtual environment tujuan, lalu:
 
 ```bash
-cd selfpdf_ocr
+cd ~/Downloads/selfpdf_ocr
 curl -fL https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten \
   -o text-detection.rten
 curl -fL https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten \
   -o text-recognition.rten
-../.venv/bin/pip install 'maturin>=1.7,<2'
-../.venv/bin/maturin develop --release
+pip install 'maturin>=1.7,<2'
+maturin develop --release
 ```
 
 Contoh pemakaian setelah dibangun:
@@ -144,6 +148,12 @@ print(result.text)
 `ocr_bytes(bytes)` menerima data gambar PNG/JPEG, sementara
 `ocr_batch(list[str])` menjalankan OCR pada beberapa file secara berurutan.
 Kesalahan model, file, dan format gambar dilaporkan sebagai exception Python.
+
+Keterbatasan yang membuatnya belum bisa menggantikan Tesseract: `OcrResult`
+hanya mengembalikan teks, tanpa koordinat tiap kata. Fitur inti aplikasi ini
+(searchable PDF, `search_text`, badge OCR) membutuhkan posisi kata, jadi
+penggunaannya memerlukan `get_text_with_locations` dari `ocrs` yang belum
+di-bind.
 
 ## Cara pakai
 
