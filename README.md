@@ -210,6 +210,7 @@ tests/
   test_core.py          tes logika inti (tanpa GUI)
   test_tools.py         tes seluruh perkakas PDF
   test_gui.py           smoke test GUI (butuh display)
+  test_gui_interactive.py  uji alur GUI: tambah berkas, gambar, mode simpan
 ```
 
 ## Logo
@@ -232,4 +233,5 @@ kali. Pencarian berkas tidak membedakan huruf besar-kecil. Lihat
 ```bash
 .venv/bin/python -m pytest tests/ -q
 xvfb-run -a .venv/bin/python tests/test_gui.py
+xvfb-run -a .venv/bin/python tests/test_gui_interactive.py
 ```
