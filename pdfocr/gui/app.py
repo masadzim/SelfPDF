@@ -274,7 +274,7 @@ class MainWindow(tk.Tk):
                 bar.register_command(name, spec.label, lambda s=spec: self._open_tool(s), "", spec.icon_name if hasattr(spec, 'icon_name') else "")
 
         # Help menu
-        help_menu = bar.add_menu("Bantuan", gap_before=18)
+        help_menu = bar.add_menu("Bantuan")
         help_menu.add_command("Cara Pakai", self._show_help, "F1")
         help_menu.add_command("Tentang", self._show_about)
 
