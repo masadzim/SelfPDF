@@ -1,0 +1,17 @@
+# Environment virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Berkas PDF hasil test / pengguna
+*.pdf
+!tests/**/*.pdf
+
+# Output aplikasi
+*.log

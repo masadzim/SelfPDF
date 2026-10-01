@@ -1,0 +1,20 @@
+# --- Inti aplikasi ---
+pymupdf>=1.24
+pillow>=10.0
+pytesseract>=0.3.10
+
+# --- Perkakas PDF ---
+# PDF -> Word / Excel
+pdf2docx>=0.5.8
+pdfplumber>=0.11
+openpyxl>=3.1
+# Word -> PDF, PowerPoint -> PDF, Excel -> PDF (butuh LibreOffice terpasang)
+python-docx>=1.1
+python-pptx>=0.6
+# HTML / Markdown -> PDF
+markdown>=3.5
+# Tanda tangan digital (opsional, hanya untuk Sign PDF mode sertifikat)
+cryptography>=42.0
+
+# --- Tes ---
+pytest>=8.0
