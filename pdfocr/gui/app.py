@@ -24,13 +24,24 @@ from tkinter import filedialog, messagebox, ttk
 import webbrowser
 
 from ..core import (
+    KIND_LABELS,
+    RENDERABLE_KINDS,
     SAVE_LABELS,
     SAVE_RAW,
     SAVE_SEARCHABLE,
     OCR_DPI,
     Project,
+    kind_of,
 )
 from ..ocr import DEFAULT_LANG, OcrUnavailable, check_available, run_ocr
+from ..tools.base import (
+    INPUT_ANY,
+    INPUT_IMAGE,
+    INPUT_IMAGE_ONE,
+    INPUT_OFFICE,
+    INPUT_PDF,
+    INPUT_PDF_MULTI,
+)
 from .app_colors import ACCENT, BG, BG_PANEL, FG, FG_DIM, OK, WARN
 from .branding import (
     APP_NAME,
@@ -52,6 +63,35 @@ THUMB_HEIGHT = 190
 # Lebar panel samping. Cukup untuk form param tanpa membuat grid thumbnail
 # terlalu sempit pada lebar jendela minimum.
 PANEL_WIDTH = 372
+
+# Label tombol insert saat belum ada tool yang dipilih. Begitu perkakas diklik
+# di menubar, labelnya menyesuaikan jenis file yang tool itu butuhkan.
+DEFAULT_ADD_LABEL = "+ Tambah PDF"
+
+# Tombol insert hanya perlu menerima jenis file yang sedang dibutuhkan, jadi
+# dialognya tidak pernah dibuka tanpa alasan.
+ADD_LABELS = {
+    INPUT_PDF_MULTI: "+ Tambah PDF",
+    INPUT_PDF: "+ Tambah PDF",
+    INPUT_IMAGE: "+ Tambah Gambar",
+    INPUT_IMAGE_ONE: "+ Tambah Gambar",
+    INPUT_OFFICE: "+ Tambah Office",
+    INPUT_ANY: "+ Tambah Berkas",
+}
+
+ADD_FILETYPES = {
+    INPUT_PDF_MULTI: (("PDF", "*.pdf"),),
+    INPUT_PDF: (("PDF", "*.pdf"),),
+    INPUT_IMAGE: (("Gambar", "*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp"),),
+    INPUT_IMAGE_ONE: (("Gambar", "*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp"),),
+    INPUT_OFFICE: (
+        ("Word", "*.docx *.doc"),
+        ("PowerPoint", "*.pptx *.ppt"),
+        ("Excel", "*.xlsx *.xls"),
+        ("Semua", "*"),
+    ),
+    INPUT_ANY: (("Semua", "*"),),
+}
 
 __all__ = ["ACCENT", "APP_TITLE", "BG", "BG_PANEL", "DONATION_URL", "FG", "FG_DIM",
            "MainWindow", "OK", "SUPPORT_EMAIL", "WARN"]
@@ -160,7 +200,7 @@ class MainWindow(tk.Tk):
                 ("Gabung & Simpan", self._save, "Accent.TButton"),
                 ("Jalankan", self._run_active_tool, "App.TButton"),
                 ("Bersihkan", self._clear_all, "App.TButton"),
-                ("+ Tambah PDF", self._add_files, "App.TButton"),
+                (DEFAULT_ADD_LABEL, self._add_files, "App.TButton"),
             ],
         )
         self.header.pack(fill="x")
@@ -181,7 +221,7 @@ class MainWindow(tk.Tk):
         self._menubar = bar
 
         file_menu = bar.add_menu("File")
-        file_menu.add_command("Buka PDF…", self._add_files)
+        file_menu.add_command("Tambah Berkas…", self._add_files)
         file_menu.add_command("Gabung & Simpan…", self._save)
         file_menu.add_separator()
         file_menu.add_command("Kosongkan Proyek", self._clear_all)
@@ -221,6 +261,10 @@ class MainWindow(tk.Tk):
         """
         self._show_tool()
         self.tools.set_spec(spec)
+        self._refresh_add_label()
+        # Preview ikut diperbarui karena jenis input tool berubah: PDF dan
+        # gambar tetap jadi thumbnail, Office/HTML jadi daftar nama berkas.
+        self._refresh_file_list()
 
     def _run_active_tool(self) -> None:
         """Tombol 'Jalankan' di header: jalankan tool yang sedang dipilih."""
@@ -229,7 +273,7 @@ class MainWindow(tk.Tk):
             self.tools.report(
                 "Belum ada perkakas dipilih",
                 "Pilih satu perkakas dari menu di atas — misalnya Konversi, Edit,\n"
-                "atau Keamanan — lalu tekan Jalankan.",
+                "atau Keamanan — untuk mengisi parameternya.",
                 tone="warn",
             )
             self.set_status("Pilih perkakas dari menu dulu.")
@@ -351,8 +395,19 @@ class MainWindow(tk.Tk):
         left.grid(row=0, column=0, sticky="nsew")
         left.columnconfigure(0, weight=1)
         left.rowconfigure(1, weight=1)
+        # Grid tetap merebut ruang; daftar berkas hanya muncul saat dibutuhkan.
 
         self._build_action_bar(left)
+
+        # Daftar berkas yang tidak bisa jadi thumbnail (Office, HTML, dll).
+        # Kalau tool aktif memang butuh jenis itu, daftar ini menggantikan
+        # preview yang kosong — user tetap tahu file-nya sudah masuk.
+        self.file_list = tk.Label(
+            left, text="", bg=BG_PANEL, fg=FG_DIM, anchor="nw", justify="left",
+            font=("TkFixedFont", 9), padx=8, pady=6,
+        )
+        self.file_list.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        self.file_list.grid_remove()
 
         self.grid = PageGrid(
             left,
@@ -549,9 +604,16 @@ class MainWindow(tk.Tk):
     # --------------------------------------------------------------- sumber
 
     def _add_files(self) -> None:
+        """Satu-satunya cara memasukkan berkas, untuk semua pekerjaan.
+
+        Jenis file yang diterima mengikuti tool yang sedang dipilih, dan
+        hasilnya langsung tampil di preview — bukan disembunyikan di form.
+        """
+        input_kind = self._insert_kind()
+        patterns = list(ADD_FILETYPES.get(input_kind, (("Semua", "*"),)))
         paths = filedialog.askopenfilenames(
-            title="Pilih file PDF",
-            filetypes=[("PDF", "*.pdf"), ("Semua berkas", "*.*")],
+            title=f"Pilih {ADD_LABELS.get(input_kind, 'berkas').lstrip('+ ')}",
+            filetypes=patterns,
             parent=self,
         )
         if not paths:
@@ -559,19 +621,34 @@ class MainWindow(tk.Tk):
         try:
             added, errors = self.project.add_files(list(paths))
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Gagal membuka PDF", str(exc), parent=self)
+            messagebox.showerror("Gagal membuka berkas", str(exc), parent=self)
             return
 
+        self._refresh_all()
         if errors:
             self.set_status("Sebagian file gagal: " + errors[0])
-        self._refresh_all()
-        if added:
-            self.set_status(f"{added} halaman ditambahkan.")
+        elif added:
+            self.set_status(f"{added} halaman ditambahkan ke preview.")
+        else:
+            self.set_status(f"{len(paths)} berkas ditambahkan ke preview.")
+
+    def _insert_kind(self) -> str:
+        """Jenis file yang dibutuhkan tool aktif (default PDF)."""
+        spec = self.tools.spec
+        return spec.input_kind if spec is not None else INPUT_PDF_MULTI
+
+    def _refresh_add_label(self) -> None:
+        """Samakan label tombol Tambah dengan kebutuhan tool yang dipilih."""
+        label = ADD_LABELS.get(self._insert_kind(), DEFAULT_ADD_LABEL)
+        for button in self.header.action_buttons:
+            if str(button.cget("text")).startswith("+ Tambah"):
+                button.configure(text=label)
+                return
 
     def _clear_all(self) -> None:
-        if not self.project.pages:
+        if not self.project.files and not self.project.pages:
             return
-        if not messagebox.askyesno("Kosongkan daftar", "Hapus semua halaman dari daftar?",
+        if not messagebox.askyesno("Kosongkan daftar", "Hapus semua berkas dari daftar?",
                                     parent=self):
             return
         self.project.close()
@@ -587,6 +664,7 @@ class MainWindow(tk.Tk):
         self._refresh_thumbs()
         self._update_info()
         self._sync_mode()
+        self._refresh_file_list()
 
     def _refresh_thumbs(self) -> None:
         for index in range(len(self.project.pages)):
@@ -607,20 +685,52 @@ class MainWindow(tk.Tk):
         except Exception:  # noqa: BLE001
             photo = None
 
+        kind = KIND_LABELS.get(source.kind, "Berkas")
         label = f"{os.path.basename(source.path)} · h{ref.src_index + 1}"
         if ref.rotation:
             label += f"  ({ref.rotation}°)"
+        # Badge jenis file: preview menampilkan PDF maupun gambar, jadi user
+        # bisa melihat apa yang sudah dimasukkan tanpa membuka menubar.
         self.grid.update_cell(
-            index, photo, label, ref.is_ocr_done, index in self.grid.selection
+            index, photo, f"[{kind}] {label}", ref.is_ocr_done, index in self.grid.selection
         )
+
+    def _refresh_file_list(self) -> None:
+        """Tampilkan daftar berkas non-thumbnail tepat di atas preview.
+
+        PDF dan gambar sudah muncul sebagai thumbnail, jadi baris ini hanya
+        dipakai untuk tool yang butuh Office/HTML/dll. Untuk tool seperti itu,
+        daftar nama berkas inilah yang menggantikan preview yang kosong.
+        """
+        spec = self.tools.spec
+        if spec is None:
+            self.file_list.grid_remove()
+            return
+
+        wanted = self.project.inputs_for(spec.input_kind)
+        # Yang tidak punya thumbnail = tidak bisa dirender jadi halaman.
+        plain = [p for p in wanted if kind_of(p) not in RENDERABLE_KINDS]
+        if not plain:
+            self.file_list.grid_remove()
+            return
+
+        head = "Berkas untuk " + spec.label + ":"
+        body = "\n".join(f"  - {os.path.basename(p)}" for p in plain)
+        self.file_list.configure(text=f"{head}\n{body}")
+        self.file_list.grid()
 
     def _update_info(self) -> None:
         total = len(self.project.pages)
         ocr = sum(1 for p in self.project.pages if p.is_ocr_done)
-        files = len({p.doc_key for p in self.project.pages})
-        self.info_var.set(
-            f"{total} halaman · {files} file · {ocr} ber-OCR" if total else "0 halaman"
-        )
+        # `files` menghitung semua yang sudah dimasukkan, termasuk yang tidak
+        # jadi halaman (Office/HTML), supaya jumlahnya tidak setengah jadi.
+        files = len(self.project.files)
+        if total:
+            self.info_var.set(f"{total} halaman · {files} file · {ocr} ber-OCR")
+        elif files:
+            self.info_var.set(f"0 halaman · {files} file (tanpa thumbnail)")
+        else:
+            self.info_var.set("0 halaman")
 
     # -------------------------------------------------------------- reorder
 
@@ -645,6 +755,7 @@ class MainWindow(tk.Tk):
         # permanen — klik lagi di menubar untuk melanjutkan.
         self.show_page()
         self._show_page_text(index)
+        self._refresh_file_list()
 
     def _on_activate(self, index: int) -> None:
         self._run_ocr([index])

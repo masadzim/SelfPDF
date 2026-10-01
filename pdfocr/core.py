@@ -11,6 +11,41 @@ from .ocr import DEFAULT_LANG, OcrWord, check_available, group_lines, words_to_t
 
 OCR_DPI = 300
 
+# Jenis berkas yang bisa dimasukkan lewat satu tombol insert. PDF dan gambar
+# bisa dirender jadi halaman (jadi thumbnail di preview), sedangkan Office dan
+# HTML tidak — keduanya hanya disimpan sebagai daftar berkas.
+KIND_PDF = "pdf"
+KIND_IMAGE = "image"
+KIND_OFFICE = "office"
+KIND_HTML = "html"
+KIND_OTHER = "other"
+
+KIND_LABELS = {
+    KIND_PDF: "PDF",
+    KIND_IMAGE: "Gambar",
+    KIND_OFFICE: "Office",
+    KIND_HTML: "HTML",
+    KIND_OTHER: "Berkas",
+}
+
+_EXT_KIND = {
+    ".pdf": KIND_PDF,
+    ".png": KIND_IMAGE, ".jpg": KIND_IMAGE, ".jpeg": KIND_IMAGE,
+    ".tif": KIND_IMAGE, ".tiff": KIND_IMAGE, ".bmp": KIND_IMAGE, ".webp": KIND_IMAGE,
+    ".doc": KIND_OFFICE, ".docx": KIND_OFFICE,
+    ".ppt": KIND_OFFICE, ".pptx": KIND_OFFICE,
+    ".xls": KIND_OFFICE, ".xlsx": KIND_OFFICE,
+    ".html": KIND_HTML, ".htm": KIND_HTML,
+}
+
+# Jenis yang bisa dibuka pymupdf sehingga muncul sebagai halaman di preview.
+RENDERABLE_KINDS = (KIND_PDF, KIND_IMAGE)
+
+
+def kind_of(path: str) -> str:
+    """Tentukan jenis berkas dari ekstensinya."""
+    return _EXT_KIND.get(os.path.splitext(path)[1].lower(), KIND_OTHER)
+
 SAVE_SEARCHABLE = "searchable"
 SAVE_IMAGE = "image"
 SAVE_RAW = "raw"
@@ -44,6 +79,7 @@ class SourceDoc:
     key: str
     path: str
     doc: pymupdf.Document = field(repr=False)
+    kind: str = KIND_PDF
 
     @property
     def label(self) -> str:
@@ -51,9 +87,16 @@ class SourceDoc:
 
 
 class Project:
-    """Kumpulan dokumen sumber + urutan halaman hasil urutan visual user."""
+    """Berkas yang sudah dimasukkan + urutan halaman hasil urutan visual user.
+
+    `files` adalah **sumber tunggal**: semua tool membaca dari sini, jadi satu
+    tombol insert berlaku untuk semua pekerjaan. Halaman di `pages` hanya
+    turunan dari berkas yang bisa dirender (PDF & gambar); Office/HTML tetap
+    ada di `files` tanpa halaman.
+    """
 
     def __init__(self) -> None:
+        self.files: list[str] = []
         self.sources: dict[str, SourceDoc] = {}
         self.pages: list[PageRef] = []
         self._counter = 0
@@ -61,28 +104,63 @@ class Project:
     # ------------------------------------------------------------------ load
 
     def add_files(self, paths: list[str]) -> tuple[int, list[str]]:
-        """Tambahkan PDF ke akhir daftar. Balikan: (jumlah halaman, pesan galat)."""
-        added = 0
+        """Tambahkan berkas. Balikan: (jumlah halaman baru, pesan galat).
+
+        PDF dan gambar ikut jadi halaman (muncul sebagai thumbnail di preview).
+        Office dan HTML hanya tercatat sebagai berkas; pymupdf tidak bisa
+        merendernya sehingga tidak punya halaman.
+        """
+        added_pages = 0
         errors: list[str] = []
+
         for path in paths:
-            try:
-                doc = pymupdf.open(path)
-                if doc.page_count == 0:
-                    doc.close()
-                    errors.append(f"{os.path.basename(path)}: tidak ada halaman")
-                    continue
-            except Exception as exc:
-                errors.append(f"{os.path.basename(path)}: {exc}")
+            if not os.path.isfile(path):
+                errors.append(f"{os.path.basename(path)}: berkas tidak ditemukan")
                 continue
 
-            self._counter += 1
-            key = f"d{self._counter}"
-            self.sources[key] = SourceDoc(key, path, doc)
-            for index in range(doc.page_count):
-                self.pages.append(PageRef(doc_key=key, src_index=index))
-            added += doc.page_count
+            kind = kind_of(path)
+            if kind in RENDERABLE_KINDS:
+                try:
+                    doc = pymupdf.open(path)
+                    if doc.page_count == 0:
+                        doc.close()
+                        errors.append(f"{os.path.basename(path)}: tidak ada halaman")
+                        continue
+                except Exception as exc:
+                    errors.append(f"{os.path.basename(path)}: {exc}")
+                    continue
 
-        return added, errors
+                self.files.append(path)
+                self._counter += 1
+                key = f"d{self._counter}"
+                self.sources[key] = SourceDoc(key, path, doc, kind=kind)
+                for index in range(doc.page_count):
+                    self.pages.append(PageRef(doc_key=key, src_index=index))
+                added_pages += doc.page_count
+            else:
+                # Tidak bisa dirender, tapi tetap input yang sah untuk tool
+                # konversi (WORD/EXCEL/HTML to PDF).
+                self.files.append(path)
+
+        return added_pages, errors
+
+    def inputs_for(self, input_kind: str) -> list[str]:
+        """Berkas dari `files` yang cocok dengan `input_kind` sebuah tool."""
+        if input_kind in ("pdf_multi", "pdf"):
+            wanted = (KIND_PDF,)
+        elif input_kind in ("image", "image_one"):
+            wanted = (KIND_IMAGE,)
+        elif input_kind == "office":
+            wanted = (KIND_OFFICE,)
+        elif input_kind == "any":
+            wanted = (KIND_HTML, KIND_OTHER)
+        else:
+            return []
+
+        return [p for p in self.files if kind_of(p) in wanted]
+
+    def kinds_present(self) -> set[str]:
+        return {kind_of(p) for p in self.files}
 
     def close(self) -> None:
         for source in self.sources.values():
@@ -92,6 +170,21 @@ class Project:
                 pass
         self.sources.clear()
         self.pages.clear()
+        self.files.clear()
+
+    def remove_file(self, path: str) -> None:
+        """Keluarkan satu berkas dan semua halamannya dari proyek."""
+        if path not in self.files:
+            return
+        self.files.remove(path)
+        doomed = [key for key, src in self.sources.items() if src.path == path]
+        self.pages = [p for p in self.pages if p.doc_key not in doomed]
+        for key in doomed:
+            try:
+                self.sources[key].doc.close()
+            except Exception:
+                pass
+            del self.sources[key]
 
     # -------------------------------------------------------------- urutan
 

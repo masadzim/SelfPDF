@@ -135,9 +135,9 @@ class ToolPanel(ttk.Frame):
         self.worker: Optional[threading.Thread] = None
         self._finished = False
 
-        # Nilai per tool supaya tidak hilang saat berpindah tool.
+        # Nilai per tool supaya tidak hilang saat berpindah tool. Daftar berkas
+        # tidak ada di sini — semua tool membaca dari preview.
         self._vars: dict[str, dict[str, tk.StringVar]] = {}
-        self._inputs: dict[str, list[str]] = {}
         self._widgets: list[tk.Misc] = []
         self._help_labels: list[ttk.Label] = []
 
@@ -239,26 +239,15 @@ class ToolPanel(ttk.Frame):
         tool_id = spec.id
         if tool_id not in self._vars:
             self._vars[tool_id] = {param.key: self._default_var(param) for param in spec.params}
-            self._inputs[tool_id] = []
 
-        self.file_var = tk.StringVar(value=self._describe(tool_id))
-
-        if spec.input_kind != INPUT_NONE:
-            ttk.Label(self.form, text=INPUT_LABELS.get(spec.input_kind, "Berkas"),
-                      style="Field.TLabel").grid(row=0, column=0, sticky="nw", pady=(0, 6))
-            entry = ttk.Entry(self.form, textvariable=self.file_var, state="readonly")
-            entry.grid(row=0, column=1, sticky="ew", pady=(0, 6))
-            self._widgets.append(entry)
-            ttk.Button(self.form, text="…", width=3, style="Panel.TButton",
-                       command=self._pick_inputs).grid(row=0, column=2, padx=(4, 0),
-                                                       pady=(0, 6), sticky="e")
-
+        # Tidak ada baris input + tombol "…" di sini. Berkas masuk lewat satu
+        # tombol Tambah di header dan langsung tampil di preview, jadi form
+        # cukup berisi parameter saja.
         self.param_widgets: dict[str, tk.Misc] = {}
-        row = 1 if spec.input_kind != INPUT_NONE else 0
+        row = 0
         for param in spec.params:
             row = self._build_param(param, row)
 
-        self._refresh_inputs_label()
         self._set_running(False)
         self.scroll.canvas.configure(scrollregion=self.scroll.canvas.bbox("all"))
         self.scroll.canvas.yview_moveto(0.0)
@@ -315,39 +304,18 @@ class ToolPanel(ttk.Frame):
 
     # ------------------------------------------------------------------ berkas
 
-    def _describe(self, tool_id: str) -> str:
-        paths = self._inputs.get(tool_id) or []
-        if not paths:
-            return ""
-        if len(paths) == 1:
-            return os.path.basename(paths[0])
-        return f"{len(paths)} berkas dipilih"
-
-    def _refresh_inputs_label(self) -> None:
-        if getattr(self, "file_var", None) is not None:
-            self.file_var.set(self._describe(self.spec.id))  # type: ignore[union-attr]
-
-    def _pick_inputs(self) -> None:
+    def describe_inputs(self) -> str:
+        """Ringkasan berkas yang akan dipakai tool ini, dibaca dari preview."""
         spec = self.spec
         if spec is None:
-            return
-        patterns = list(FILE_DIALOG.get(spec.input_kind, FILE_DIALOG[INPUT_ANY]))
-        if spec.input_kind in ("pdf_multi", "image", "office", "any"):
-            paths = filedialog.askopenfilenames(
-                title=f"Pilih {INPUT_LABELS.get(spec.input_kind, 'berkas')}",
-                filetypes=patterns,
-                parent=self,
-            )
-        else:
-            chosen = filedialog.askopenfilename(
-                title=f"Pilih {INPUT_LABELS.get(spec.input_kind, 'berkas')}",
-                filetypes=patterns,
-                parent=self,
-            )
-            paths = (chosen,) if chosen else ()
-        if paths:
-            self._inputs[spec.id] = list(paths)
-            self._refresh_inputs_label()
+            return ""
+        paths = self.host.project.inputs_for(spec.input_kind)
+        if not paths:
+            wanted = INPUT_LABELS.get(spec.input_kind, "berkas")
+            return f"Belum ada {wanted.lower()} di preview"
+        if len(paths) == 1:
+            return os.path.basename(paths[0])
+        return f"{len(paths)} berkas di preview"
 
     def _pick_path(self, param: Param, var: tk.StringVar) -> None:
         if param.kind == "dir":
@@ -362,9 +330,7 @@ class ToolPanel(ttk.Frame):
             return
         for param in self.spec.params:
             self._vars[self.spec.id][param.key].set(self._default_var(param).get())
-        self._inputs[self.spec.id] = []
-        self._refresh_inputs_label()
-        self.status.configure(text="Isi tool dikosongkan.", fg=FG_DIM)
+        self.status.configure(text="Parameter tool dikosongkan.", fg=FG_DIM)
 
     # ------------------------------------------------------------------ proses
 
@@ -386,14 +352,18 @@ class ToolPanel(ttk.Frame):
         if spec is None or self.is_busy:
             return
 
-        inputs = self._inputs.get(spec.id) or []
+        # Sumber berkas tunggal: preview di panel kiri. Tidak ada daftar input
+        # sendiri per tool, jadi `+ Tambah PDF` berlaku untuk semua pekerjaan.
+        inputs = self.host.project.inputs_for(spec.input_kind)
         if not inputs:
+            wanted = INPUT_LABELS.get(spec.input_kind, "berkas").lower()
             self._show_result(
                 "Belum ada berkas",
-                f"Pilih {INPUT_LABELS.get(spec.input_kind, 'berkas')} dulu lewat tombol … di atas.",
+                f"Tambahkan {wanted} dulu lewat tombol Tambah di baris atas — "
+                f"filenya akan muncul di preview.",
                 tone="warn",
             )
-            self.host.set_status(f"{spec.label}: berkas belum dipilih.")
+            self.host.set_status(f"{spec.label}: belum ada {wanted} di preview.")
             return
 
         try:
@@ -407,7 +377,7 @@ class ToolPanel(ttk.Frame):
             return
 
         self._finished = False
-        self._show_result("Sedang berjalan…", f"{spec.label} — {self._describe(spec.id)}")
+        self._show_result("Sedang berjalan…", f"{spec.label} — {self.describe_inputs()}")
         self._set_running(True, f"{spec.label} berjalan…")
         self.host.set_status(f"{spec.label} sedang berjalan…")
 

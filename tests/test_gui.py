@@ -381,16 +381,41 @@ def main() -> int:
     app.update()
     check("param tool kembali seperti sebelumnya",
           app.tools._vars["crop"]["margin"].get() == "21")
-    check("input tool berbeda tidak saling bocor",
-          app.tools._describe("compress") == "", app.tools._describe("compress"))
+    check("input tool dibaca dari preview, bukan daftar sendiri",
+          app.tools.describe_inputs() != "", app.tools.describe_inputs())
+    check("tidak ada daftar input per tool",
+              not hasattr(app.tools, "_inputs"), "masih ada _inputs")
+    check("tidak ada tombol insert di form tool",
+              "…" not in all_button_texts(app.tools),
+              str([t for t in all_button_texts(app.tools) if "…" in t]))
+
+    # Satu tombol insert untuk semua pekerjaan: labelnya mengikuti jenis file
+    # yang dibutuhkan tool yang dipilih dari menubar.
+    def add_label():
+        return next(str(b.cget("text")) for b in app.header.action_buttons
+                    if str(b.cget("text")).startswith("+ Tambah"))
+
+    check("label tombol insert default PDF", add_label() == "+ Tambah PDF", add_label())
+    for tool_id, expected in (("compress", "+ Tambah PDF"),
+                              ("jpg2pdf", "+ Tambah Gambar"),
+                              ("word2pdf", "+ Tambah Office"),
+                              ("html2pdf", "+ Tambah Berkas")):
+        app._open_tool(get(tool_id))
+        app.update()
+        check(f"label tombol insert untuk {tool_id}", add_label() == expected,
+              f"{add_label()} (harap {expected})")
+    app._open_tool(get("crop"))
+    app.update()
 
     # Jalankan tool sungguhan dari panel: hasil harus inline.
     tool_out = os.path.join(out_dir, "panel-crop.pdf")
     if os.path.exists(tool_out):
         os.remove(tool_out)
     app.tools._vars["crop"]["margin"].set("12")
-    app.tools._inputs["crop"] = [paths[0]]
-    app.tools._refresh_inputs_label()
+    # Berkas untuk tool diambil dari preview (project), bukan dari form tool.
+    app.project.add_files([paths[0]])
+    app._refresh_all()
+    app.update()
     filedialog.asksaveasfilename = lambda *a, **k: tool_out
     try:
         app.tools.start()
@@ -416,6 +441,8 @@ def main() -> int:
           app.status_var.get())
 
     # Menjalankan tanpa berkas harus memberi pesan di panel, bukan popup.
+    app.project.close()
+    app._refresh_all()
     app.tools.clear_inputs()
     shown.clear()
     app.tools.start()
@@ -516,11 +543,53 @@ def main() -> int:
                 unreachable.append(target)
         check(f"scroll ke semua target @ {geometry}", not unreachable, str(unreachable))
 
+    # ---- satu sumber berkas: preview dipakai semua tool ----
+    app.project.close()
+    html_path = os.path.join(out_dir, "satu.html")
+    with open(html_path, "w", encoding="utf-8") as fh:
+        fh.write("<html><body><h1>Uji</h1></body></html>")
+
+    app.project.add_files(paths + [html_path])
+    app._refresh_all()
+    app.update()
+    check("berkas non-thumbnail tetap tercatat",
+              os.path.basename(html_path) in [os.path.basename(f) for f in app.project.files],
+              str([os.path.basename(f) for f in app.project.files]))
+    check("halaman preview = PDF + gambar saja",
+              len(app.project.pages) > 0, str(len(app.project.pages)))
+
+    app._open_tool(get("html2pdf"))
+    app.update()
+    check("tool non-PDF membaca berkas dari preview",
+              [os.path.basename(p) for p in app.project.inputs_for("any")]
+              == [os.path.basename(html_path)],
+              str(app.project.inputs_for("any")))
+    check("daftar berkas tampil saat preview tak ada thumbnail",
+              app.file_list.winfo_ismapped() and
+              os.path.basename(html_path) in app.file_list.cget("text"),
+              repr(app.file_list.cget("text")))
+
+    app._open_tool(get("compress"))
+    app.update()
+    check("daftar berkas disembunyikan untuk tool PDF",
+              not app.file_list.winfo_ismapped(), "masih tampil")
+
+    check("badge jenis file di thumbnail",
+          str(app.grid._cells[0]._badge.cget("text")).startswith("[PDF]"),
+          str(app.grid._cells[0]._badge.cget("text")))
+
     # ---- ukuran thumbnail ----
     app.geometry("1360x860")
     app.project = project_backup
     app._refresh_all()
     app.update()
+    # Tes "tanpa berkas" sengaja mengosongkan proyek; muat ulang agar tes
+    # orientasi thumbnail punya halaman untuk dikerjakan.
+    if not app.project.pages:
+        app.project.add_files(paths)
+        app._refresh_all()
+        app.update()
+
     for degree, expected_portrait in ((0, True), (90, False), (180, True), (270, False)):
         app.project.pages[0].rotation = degree
         app.thumbs.clear()

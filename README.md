@@ -5,6 +5,15 @@ geser thumbnail halaman untuk mengurutkan ulang — sekaligus menjalankan **OCR
 English** dan menyimpan hasilnya sebagai PDF yang bisa dicari, ditambah satu
 bar menu berisi 26 perkakas PDF.
 
+## Cara pakai
+
+1. Klik **+ Tambah PDF** di baris atas — semua pekerjaan lewat tombol ini.
+2. Berkas langsung **muncul di preview** (grid thumbnail di kiri).
+3. Pilih perkakas dari **menubar**, isi parameternya, lalu klik **Jalankan**.
+
+Tidak ada tombol "+Tambah" per tool, dan tidak ada daftar berkas terpisah di
+dalam form. Satu preview, satu tombol, semua pekerjaan.
+
 ## Fitur inti
 
 - **Gabung banyak PDF** — semua file dipecah jadi halaman, tampil sebagai grid thumbnail.
@@ -32,6 +41,18 @@ Semua tool hidup di **satu panel in-window**, bukan dialog terpisah:
   belakang jendela.
 - Tidak ada tombol atau input yang muncul dua kali — misalnya tombol OCR hanya
   ada di baris di atas grid, tidak lagi diulang di panel samping.
+
+### Satu sumber berkas
+
+Berkas masuk hanya lewat **satu tombol Tambah** di header, dan langsung tampil
+di preview. Tidak ada tombol "+Tambah" di tiap form tool, dan tidak ada daftar
+input terpisah per tool.
+
+- Label tombol menyesuaikan jenis file yang dibutuhkan tool aktif:
+  `+ Tambah PDF`, `+ Tambah Gambar`, `+ Tambah Office`, `+ Tambah Berkas`.
+- PDF dan gambar muncul sebagai thumbnail; badge `[PDF]` / `[Gambar]` menandai jenisnya.
+- Office dan HTML tidak bisa dirender jadi thumbnail, jadi nama berkasnya
+  ditampilkan sebagai daftar di atas preview sampai tool dijalankan.
 - Parameter dan berkas yang dipilih disimpan **per tool**, jadi berpindah tool
   tidak menghapus isian yang sudah diisi.
 - Hasil — sukses, peringatan, maupun error — ditulis inline di kotak hasil pada
@@ -45,7 +66,7 @@ yang memang harus berupa dialog.
 
 | Kategori | Tool |
 |---|---|
-| File | Buka PDF, Gabung & Simpan, Kosongkan Proyek, Keluar |
+| File | Tambah Berkas, Gabung & Simpan, Kosongkan Proyek, Keluar |
 | Edit | Putar, Duplikat, Hapus, OCR semua / terpilih |
 | Organize PDF | Split PDF, Extract Pages, Remove Pages, Scan to PDF |
 | Optimize PDF | Compress PDF, Repair PDF |
