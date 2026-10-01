@@ -106,7 +106,9 @@ def pdf_to_word(inputs, params, out_path, progress=None) -> ToolOutcome:
 
     try:
         report(progress, 40, "Menyusun dokumen Word…")
-        converter.convert(out_path, start=0, end=pages - 1)
+        # Jangan kirim start/end: `end` pada pdf2docx bersifat 1-based sehingga
+        # `end=page_count-1` diam-diam memotong halaman terakhir.
+        converter.convert(out_path)
     except Exception as exc:  # noqa: BLE001
         raise ToolError(f"Konversi ke Word gagal: {exc}") from exc
     finally:

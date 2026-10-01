@@ -296,11 +296,23 @@ def annotate_pdf(inputs, params, out_path, progress=None) -> ToolOutcome:
         elif kind == "stamp":
             if not text.strip():
                 raise ToolError("Teks stempel tidak boleh kosong.")
+            lines = max(1, len(text) // 18 + 1)
             box = pymupdf.Rect(
-                rect.x1 - 220, rect.y0 + 30, rect.x1 - 40, rect.y0 + 90
+                rect.x1 - 240, rect.y0 + 30,
+                rect.x1 - 40, rect.y0 + 40 + lines * size * 1.35
             )
-            annot = page.add_text_annot(box, text, icon="Comment")
-            annot.set_colors(stroke=color)
+            # FreeText, bukan sticky note: stempel harus terlihat dicetak di
+            # halaman, bukan hanya jadi ikon komentar.
+            annot = page.add_freetext_annot(
+                box,
+                text,
+                fontsize=size,
+                fontname="helv",
+                text_color=color,
+                fill_color=(1, 1, 1),
+                align=1,
+            )
+            annot.set_opacity(0.85)
             annot.update()
             summary = f"Stempel '{text}' ditambahkan di halaman {page_no}."
         else:
@@ -425,13 +437,15 @@ SPECS: list[ToolSpec] = [
         run=add_page_numbers,
         params=(
             Param("format", "Format", "text", "{n} / {total}",
-                  help="Placeholder: {n} = nomor, {total} = jumlah halaman."),
+                  help="Placeholder: {n} = nomor halaman ini, {total} = nomor "
+                       "halaman terakhir (ikut menyesuaikan bila 'Mulai dari' diisi)."),
             Param("position", "Posisi", "choice", "bottom-center",
                   choices=("bottom-center", "bottom-right", "bottom-left",
                            "top-center", "top-right", "top-left"),
                   labels=("Bawah tengah", "Bawah kanan", "Bawah kiri",
                           "Atas tengah", "Atas kanan", "Atas kiri")),
-            Param("start", "Mulai dari", "int", "1"),
+            Param("start", "Mulai dari", "int", "1",
+                  help="Nomor untuk halaman pertama. Kosongkan = 1."),
             Param("size", "Ukuran font", "float", "10"),
             Param("font", "Font", "choice", "helv",
                   choices=("helv", "tiro", "cour"),

@@ -248,12 +248,17 @@ def _markdown_to_html(src: str, dst: str) -> None:
 
     text = open(src, encoding="utf-8", errors="replace").read()
     body = md.markdown(text, extensions=["tables", "fenced_code", "toc"])
-    open(dst, "w", encoding="utf-8").write(
-        f"<html><head><meta charset='utf-8'><style>"
+    # CSS ditulis sebagai string biasa agar kurung kurawalnya tetap apa adanya;
+    # hanya kerangka dokumen yang berupa f-string.
+    style = (
         "body{font-family:sans-serif;margin:2cm;line-height:1.5}"
         "table{border-collapse:collapse}td,th{border:1px solid #999;padding:4px 8px}"
-        "</style></head><body>{body}</body></html>"
     )
+    document = (
+        f"<html><head><meta charset='utf-8'><style>{style}</style>"
+        f"</head><body>{body}</body></html>"
+    )
+    open(dst, "w", encoding="utf-8").write(document)
 
 
 # ------------------------------------------------------------------ registry

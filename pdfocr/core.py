@@ -11,6 +11,10 @@ from .ocr import DEFAULT_LANG, OcrWord, check_available, group_lines, words_to_t
 
 OCR_DPI = 300
 
+# Halaman gambar disalin pada 72 DPI (1 piksel = 1 poin) agar geometri
+# halaman hasil sama persis dengan `page.rect` dokumen gambar pymupdf.
+IMAGE_PAGE_DPI = 72
+
 # Jenis berkas yang bisa dimasukkan lewat satu tombol insert. PDF dan gambar
 # bisa dirender jadi halaman (jadi thumbnail di preview), sedangkan Office dan
 # HTML tidak — keduanya hanya disimpan sebagai daftar berkas.
@@ -289,9 +293,7 @@ class Project:
             return self._build_rasterised()
 
         for ref in self.pages:
-            source = self.sources[ref.doc_key].doc
-            out.insert_pdf(source, from_page=ref.src_index, to_page=ref.src_index)
-            page = out[-1]
+            page = self._copy_page(out, ref)
 
             # Teks OCR disisipkan lebih dulu (koordinat mengikuti orientasi
             # asli hasil render), rotasi baru diterapkan setelahnya agar
@@ -304,6 +306,26 @@ class Project:
                 page.set_rotation(total)
 
         return out
+
+    def _copy_page(self, out: pymupdf.Document, ref: PageRef) -> pymupdf.Page:
+        """Salin satu halaman sumber ke dokumen keluaran, kembalikan halamannya.
+
+        Berkas gambar dibuka pymupdf sebagai dokumen non-PDF, jadi tidak bisa
+        disalin lewat `insert_pdf`. Halaman gambar dirender dengan ukuran
+        persis `page.rect` sumber (72 DPI = 1 piksel per poin) supaya skala
+        yang dipakai `apply_text_layer` — `72 / ocr_dpi` dari koordinat
+        render 300 DPI — tetap placing-nya pas di halaman hasil.
+        """
+        source = self.sources[ref.doc_key].doc
+        if source.is_pdf:
+            out.insert_pdf(source, from_page=ref.src_index, to_page=ref.src_index)
+            return out[-1]
+
+        source_page = source[ref.src_index]
+        pixmap = source_page.get_pixmap(dpi=IMAGE_PAGE_DPI, alpha=False)
+        page = out.new_page(width=pixmap.width, height=pixmap.height)
+        page.insert_image(page.rect, pixmap=pixmap)
+        return page
 
     def _build_rasterised(self) -> pymupdf.Document:
         out = pymupdf.open()

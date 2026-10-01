@@ -249,23 +249,39 @@ def redact_pdf(inputs, params, out_path, progress=None) -> ToolOutcome:
         from .base import parse_page_range
 
         total = doc.page_count
-        pages = (
-            [page_no - 1] if (mode == "page" and 1 <= page_no <= total)
-            else parse_page_range(params.get("ranges", ""), total)
-        )
+        ranges = (params.get("ranges", "") or "").strip()
+        if mode == "rects":
+            # `page` berlaku di mode koordinat; `ranges` menggantikannya bila
+            # diisi supaya beberapa halaman bisa disensor sekaligus.
+            if ranges:
+                pages = parse_page_range(ranges, total)
+            elif 1 <= page_no <= total:
+                pages = [page_no - 1]
+            else:
+                raise ToolError(f"Nomor halaman harus 1–{total}.")
+        else:
+            pages = parse_page_range(ranges, total)
 
         removed = 0
         for number in pages:
             page = doc[number]
             rects = []
             if mode == "rects":
-                rects = [
-                    pymupdf.Rect(float(v) for v in item.split(","))
-                    for item in (params.get("rects", "") or "").split(";")
-                    if item.strip() and len(item.split(",")) == 4
-                ]
+                for item in (params.get("rects", "") or "").split(";"):
+                    parts = [p.strip() for p in item.split(",") if p.strip()]
+                    if len(parts) != 4:
+                        continue
+                    try:
+                        x0, y0, x1, y1 = (float(p) for p in parts)
+                    except ValueError:
+                        continue
+                    if x1 <= x0 or y1 <= y0:
+                        continue
+                    rects.append(pymupdf.Rect(x0, y0, x1, y1))
                 if not rects:
-                    raise ToolError("Masukkan koordinat: x0,y0,x1,y1;x0,y0,x1,y1")
+                    raise ToolError(
+                        "Masukkan koordinat: x0,y0,x1,y1;x0,y0,x1,y1"
+                    )
             else:
                 for term in terms:
                     rects.extend(page.search_for(term))
@@ -495,8 +511,11 @@ SPECS: list[ToolSpec] = [
             Param("terms", "Kata kunci (pisahkan dengan koma)", "text", ""),
             Param("rects", "Kotak", "text", "",
                   help="Contoh: 50,60,300,90;50,120,320,150"),
-            Param("page", "Halaman (mode koordinat)", "int", "1"),
-            Param("ranges", "Halaman (mode kata kunci)", "text", ""),
+            Param("page", "Halaman (mode koordinat)", "int", "1",
+                  help="Dipakai kalau kolom Halaman (mode kata kunci) kosong."),
+            Param("ranges", "Halaman (mode kata kunci)", "text", "",
+                  help="Kosongkan = semua halaman. Di mode koordinat, isi untuk "
+                       "menyensor beberapa halaman sekaligus."),
         ),
     ),
     ToolSpec(

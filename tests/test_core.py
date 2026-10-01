@@ -334,3 +334,107 @@ def test_add_files_reports_broken_pdf(tmp_path, sample):
         assert "broken.pdf" in errors[0]
     finally:
         proj.close()
+
+# ------------------------------------------------------------- berkas gambar
+#
+# Gambar bisa di-insert dan jadi halaman di preview (RENDERABLE_KINDS), tapi
+# dokumen gambarnya non-PDF sehingga `insert_pdf` pernah melempar
+# "source or target not a PDF" saat proyek disimpan.
+
+@pytest.fixture()
+def scan(tmp_path):
+    from PIL import Image, ImageDraw
+
+    path = tmp_path / "scan.png"
+    image = Image.new("RGB", (1240, 1754), "white")
+    ImageDraw.Draw(image).text((90, 120), "HASIL SCAN", fill="black")
+    image.save(path)
+    return str(path)
+
+
+def test_image_file_becomes_a_page(tmp_path, scan):
+    proj = Project()
+    try:
+        added, errors = proj.add_files([scan])
+        assert added == 1
+        assert errors == []
+        assert len(proj.pages) == 1
+        assert proj.sources[proj.pages[0].doc_key].kind == "image"
+    finally:
+        proj.close()
+
+
+def test_build_saves_image_source(tmp_path, scan, sample):
+    proj = Project()
+    proj.add_files([scan] + sample[:1])
+    out = tmp_path / "gabung.pdf"
+    try:
+        proj.save(str(out), SAVE_SEARCHABLE)
+        doc = pymupdf.open(out)
+        try:
+            assert doc.page_count == len(proj.pages) == 4
+            assert doc[0].get_images(), "halaman gambar harus berisi gambar"
+            assert not doc[1].get_images(), "halaman PDF asli tetap utuh"
+            assert doc[1].get_text().strip()
+        finally:
+            doc.close()
+    finally:
+        proj.close()
+
+
+def test_image_source_saves_in_every_mode(tmp_path, scan):
+    proj = Project()
+    proj.add_files([scan])
+    try:
+        for mode in (SAVE_SEARCHABLE, SAVE_IMAGE, SAVE_RAW):
+            out = tmp_path / f"{mode}.pdf"
+            proj.save(str(out), mode)
+            doc = pymupdf.open(out)
+            try:
+                assert doc.page_count == 1
+                assert doc[0].get_images(), f"{mode} kehilangan gambar"
+            finally:
+                doc.close()
+    finally:
+        proj.close()
+
+
+def test_image_page_keeps_source_geometry(tmp_path, scan):
+    """Halaman hasil harus seukuran `page.rect` sumber agar teks OCR pas."""
+    proj = Project()
+    proj.add_files([scan])
+    try:
+        expected = proj.page_at(0).rect
+        doc = proj.build(SAVE_SEARCHABLE)
+        try:
+            got = doc[0].rect
+            assert (round(got.width), round(got.height)) == (
+                round(expected.width),
+                round(expected.height),
+            )
+        finally:
+            doc.close()
+    finally:
+        proj.close()
+
+
+def test_image_source_rotate_and_ocr(tmp_path, scan):
+    from pdfocr.ocr import run_ocr
+
+    proj = Project()
+    proj.add_files([scan])
+    try:
+        words = run_ocr(proj.page_at(0), lang="eng", dpi=OCR_DPI)
+        proj.pages[0].words = words
+        proj.rotate(0, 90)
+
+        out = tmp_path / "rotasi.pdf"
+        proj.save(str(out), SAVE_SEARCHABLE)
+        doc = pymupdf.open(out)
+        try:
+            assert doc[0].rotation == 90
+            assert doc[0].search_for("SCAN"), "teks OCR harus bisa dicari"
+        finally:
+            doc.close()
+    finally:
+        proj.close()

@@ -20,6 +20,7 @@ from .base import (
     open_pdf,
     report,
     require_inputs,
+    resolve_output_file,
     safe_stem,
     save_pdf,
 )
@@ -133,8 +134,9 @@ def extract_pages(inputs, params, out_path, progress=None) -> ToolOutcome:
             out.insert_pdf(doc, from_page=page, to_page=page)
             report(progress, int(number / len(pages) * 100))
 
+        out_dir = params.get("out_dir") or out_path
+        single_path = resolve_output_file(out_dir, inputs[0], "_extract")
         if params.get("separate"):
-            out_dir = params.get("out_dir") or out_path
             os.makedirs(out_dir, exist_ok=True)
             stem = safe_stem(inputs[0])
             created = []
@@ -152,8 +154,9 @@ def extract_pages(inputs, params, out_path, progress=None) -> ToolOutcome:
                 items=created,
             )
 
-        save_pdf(out, out_path)
-        return ToolOutcome(output=out_path, summary=f"{len(pages)} halaman diekstrak.")
+        os.makedirs(os.path.dirname(os.path.abspath(single_path)), exist_ok=True)
+        save_pdf(out, single_path)
+        return ToolOutcome(output=single_path, summary=f"{len(pages)} halaman diekstrak.")
     finally:
         doc.close()
 

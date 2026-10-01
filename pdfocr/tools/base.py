@@ -227,6 +227,21 @@ def safe_stem(path: str, fallback: str = "output") -> str:
     return cleaned or fallback
 
 
+def resolve_output_file(out_path: str, stem: str, suffix: str, extension: str = ".pdf") -> str:
+    """Tentukan nama berkas PDF tunggal dari `out_path` yang mungkin berupa folder.
+
+    Tool dengan `multi_output=True` selalu meminta folder dari GUI, tapi tool itu
+    bisa juga menghasilkan satu berkas gabungan. Bila `out_path` ternyata folder,
+    PDF-nya diletakkan di dalam folder itu; kalau bukan, `out_path` dipakai apa
+    adanya supaya panggilan langsung (CLI/tes) tetap bekerja seperti biasa.
+    """
+    if os.path.isdir(out_path):
+        return os.path.join(
+            out_path, f"{safe_stem(stem)}{suffix}{extension}"
+        )
+    return out_path
+
+
 def collect_widgets(doc: pymupdf.Document) -> tuple[list, list]:
     """Kumpulkan `(halaman, widget)` untuk seluruh field AcroForm.
 

@@ -28,6 +28,7 @@ from pdfocr.tools.base import (  # noqa: E402
     run_spec,
 )
 from pdfocr.tools.edit import parse_field_values  # noqa: E402
+from pdfocr.tools.to_pdf import _markdown_to_html  # noqa: E402
 
 
 # ------------------------------------------------------------------- fixtures
@@ -608,3 +609,156 @@ def test_office_to_pdf_word(tmp_path):
 def test_office_rejects_wrong_extension(sample, tmp_path):
     with pytest.raises(ToolError):
         run("word2pdf", [sample], out_path=str(tmp_path / "w"), tmp_path=tmp_path)
+
+
+# ------------------------------------------------------------------ regresi
+#
+# Kasus di bawah ini pernah gagal dan sekarang dikunci agar tidak kembali.
+
+def test_redact_rect_mode_builds_rects(tmp_path):
+    """Mode koordinat sempat melempar AssertionError (generator, bukan 4 float)."""
+    source = make_pdf(str(tmp_path / "r.pdf"))
+    outcome, out = run("redact", [source],
+                       {"mode": "rects", "rects": "60,100,400,140", "page": "1"},
+                       out_path=str(tmp_path / "red.pdf"), tmp_path=tmp_path)
+    assert "1 area" in outcome.summary
+    doc = pymupdf.open(out)
+    assert not doc[0].search_for("Rahasia")
+    doc.close()
+
+
+def test_redact_rect_mode_ignores_malformed_pairs(tmp_path):
+    source = make_pdf(str(tmp_path / "r.pdf"))
+    # Pasangan bukan-empat-angka dan teks sampah harus dilewati, bukan di-error.
+    _, out = run("redact", [source],
+                 {"mode": "rects", "rects": "bukan-angka;1,2,3;60,100,400,140;10,10,5,5",
+                  "page": "1"},
+                 out_path=str(tmp_path / "red.pdf"), tmp_path=tmp_path)
+    doc = pymupdf.open(out)
+    assert not doc[0].search_for("Rahasia")
+    doc.close()
+
+
+def test_redact_rect_mode_only_touches_selected_page(tmp_path):
+    """`page` di mode koordinat dulu tidak pernah dipakai (mode tak pernah 'page')."""
+    source = make_pdf(str(tmp_path / "r.pdf"))
+    _, out = run("redact", [source],
+                 {"mode": "rects", "rects": "60,100,400,140", "page": "2"},
+                 out_path=str(tmp_path / "red.pdf"), tmp_path=tmp_path)
+    doc = pymupdf.open(out)
+    assert doc[0].search_for("Rahasia"), "halaman 1 tidak boleh tersensor"
+    assert not doc[1].search_for("Rahasia")
+    doc.close()
+
+
+def test_redact_rect_mode_ranges_override_page(tmp_path):
+    source = make_pdf(str(tmp_path / "r.pdf"))
+    _, out = run("redact", [source],
+                 {"mode": "rects", "rects": "60,100,400,140", "page": "1",
+                  "ranges": "1,3"},
+                 out_path=str(tmp_path / "red.pdf"), tmp_path=tmp_path)
+    doc = pymupdf.open(out)
+    assert not doc[0].search_for("Rahasia")
+    assert doc[1].search_for("Rahasia")
+    assert not doc[2].search_for("Rahasia")
+    doc.close()
+
+
+def test_redact_rect_mode_rejects_page_out_of_range(tmp_path):
+    source = make_pdf(str(tmp_path / "r.pdf"))
+    with pytest.raises(ToolError):
+        run("redact", [source],
+            {"mode": "rects", "rects": "60,100,400,140", "page": "99"},
+            out_path=str(tmp_path / "red.pdf"), tmp_path=tmp_path)
+
+
+def test_extract_into_existing_folder(sample, tmp_path):
+    """GUI selalu meminta folder untuk tool multi-output; extract harus complies."""
+    folder = tmp_path / "tujuan"
+    folder.mkdir()
+    outcome, _ = run("extract", [sample], {"ranges": "2-3"},
+                     out_path=str(folder), tmp_path=tmp_path)
+    produced = list(folder.glob("*.pdf"))
+    assert len(produced) == 1, os.listdir(folder)
+    doc = pymupdf.open(produced[0])
+    assert doc.page_count == 2
+    doc.close()
+
+
+def test_markdown_to_html_interpolates_body(tmp_path):
+    """`{body}` berada di string biasa sehingga tidak terinterpolasi -> PDF kosong."""
+    src = tmp_path / "d.md"
+    src.write_text("# Judul Markdown\n\nParagraf **tebal**.\n", encoding="utf-8")
+    dst = tmp_path / "d.html"
+    _markdown_to_html(str(src), str(dst))
+    written = dst.read_text(encoding="utf-8")
+    assert "{body}" not in written
+    assert "font-family" in written          # CSS utuh, bukan terkurung kurawal ganda
+    assert "Judul Markdown" in written
+
+
+def test_html_to_pdf_from_markdown(tmp_path):
+    src = tmp_path / "d.md"
+    src.write_text("# Dari Markdown\n\nIsi paragraf.\n", encoding="utf-8")
+    outcome, out = run("html2pdf", [str(src)],
+                       out_path=str(tmp_path / "md.pdf"), tmp_path=tmp_path)
+    doc = pymupdf.open(out)
+    try:
+        text = doc[0].get_text()
+    finally:
+        doc.close()
+    assert "Dari Markdown" in text
+    assert "{body}" not in text
+
+
+def test_pdf_to_word_keeps_every_page(tmp_path):
+    """`end` pdf2docx itu 1-based; `end=page_count-1` memotong halaman terakhir."""
+    try:
+        import pdf2docx  # noqa: F401
+    except ImportError:
+        pytest.skip("pdf2docx belum terpasang")
+
+    import re
+    import zipfile
+
+    source = make_pdf(str(tmp_path / "src.pdf"), pages=4)
+    _, out = run("pdf2word", [source], out_path=str(tmp_path / "w.docx"),
+                 tmp_path=tmp_path)
+    xml = zipfile.ZipFile(out).read("word/document.xml").decode("utf-8")
+    text = "".join(re.findall(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", xml, re.S))
+    for index in range(1, 5):
+        assert f"Halaman {index}" in text, f"halaman {index} hilang dari DOCX"
+
+
+def test_stamp_annot_is_visible_freetext(sample, tmp_path):
+    """Stempel harus FreeText yang terlihat, bukan sticky note seperti 'Catatan'."""
+    _, out = run("annotate", [sample],
+                 {"kind": "stamp", "page": "2", "text": "APPROVED"},
+                 out_path=str(tmp_path / "st.pdf"), tmp_path=tmp_path)
+    doc = pymupdf.open(out)
+    try:
+        page = doc[1]
+        # Objek halaman harus tetap hidup: `.type` pada Annot butuh ikatannya
+        # (pola yang sama dengan catatan pada `collect_widgets`).
+        annots = list(page.annots())
+        assert len(annots) == 1
+        assert annots[0].type[1] == "FreeText"
+        assert "APPROVED" in annots[0].info.get("content", "")
+        assert not annots[0].flags & 2          # bit Hidden tidak diset
+        assert "APPROVED" in page.get_text()    # teks masuk aliran halaman
+    finally:
+        doc.close()
+
+
+def test_page_number_total_follows_start(tmp_path):
+    """`{total}` = nomor halaman terakhir, ikut menyesuaikan 'Mulai dari'."""
+    source = make_pdf(str(tmp_path / "n.pdf"), pages=4)
+    _, out = run("numbers", [source], {"start": "5"},
+                 out_path=str(tmp_path / "num.pdf"), tmp_path=tmp_path)
+    doc = pymupdf.open(out)
+    try:
+        labels = [p.get_text() for p in doc]
+    finally:
+        doc.close()
+    assert "5 / 8" in labels[0]
+    assert "8 / 8" in labels[-1]
