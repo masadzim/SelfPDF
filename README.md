@@ -115,6 +115,36 @@ python3 -m venv .venv
 Kalau `tesseract` belum terpasang, aplikasi tetap jalan — catatan peringatan
 menampilkan perintah instalasinya, dan semua fitur selain OCR tetap berfungsi.
 
+### Ekstensi OCR Rust (eksperimental)
+
+Ekstensi opsional ini memakai `ocrs` dan belum menggantikan OCR Tesseract yang
+digunakan GUI. Perlu Rust/Cargo, Python virtual environment, `maturin`, dan dua
+model `ocrs` format `.rten`; model tidak disertakan di repositori.
+
+```bash
+cd selfpdf_ocr
+curl -fL https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten \
+  -o text-detection.rten
+curl -fL https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten \
+  -o text-recognition.rten
+../.venv/bin/pip install 'maturin>=1.7,<2'
+../.venv/bin/maturin develop --release
+```
+
+Contoh pemakaian setelah dibangun:
+
+```python
+from selfpdf_ocr import OcrEngine
+
+engine = OcrEngine("text-detection.rten", "text-recognition.rten")
+result = engine.ocr_file("scan.png")
+print(result.text)
+```
+
+`ocr_bytes(bytes)` menerima data gambar PNG/JPEG, sementara
+`ocr_batch(list[str])` menjalankan OCR pada beberapa file secara berurutan.
+Kesalahan model, file, dan format gambar dilaporkan sebagai exception Python.
+
 ## Cara pakai
 
 1. **+ Tambah PDF** — pilih satu atau beberapa file. Halaman dari semua file

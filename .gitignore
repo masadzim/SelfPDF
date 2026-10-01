@@ -15,3 +15,6 @@ __pycache__/
 
 # Output aplikasi
 *.log
+
+# Build output ekstensi OCR Rust
+/selfpdf_ocr/target/
