@@ -61,13 +61,26 @@ class _Submenu:
         return self
 
 
-class MenuButton(ttk.Menubutton):
-    """Custom menubutton with hover/active states."""
+class MenuButton(ttk.Button):
+    """Custom button with dropdown menu (no dropdown arrow indicator - VS Code style)."""
 
     def __init__(self, master: tk.Misc, text: str, **kwargs) -> None:
-        super().__init__(master, text=text, width=0, style="Menubar.TMenubutton", **kwargs)
+        super().__init__(master, text=text, width=0, style="Menubar.TButton", **kwargs)
+        self._menu: tk.Menu | None = None
         self.bind("<Enter>", lambda e: self.state(["active"]), add="+")
         self.bind("<Leave>", lambda e: self.state(["!active"]), add="+")
+        # Bind click to show menu
+        self.bind("<Button-1>", self._show_menu, add="+")
+
+    def _show_menu(self, event: tk.Event) -> None:
+        if self._menu:
+            try:
+                self._menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self._menu.grab_release()
+
+    def set_menu(self, menu: tk.Menu) -> None:
+        self._menu = menu
 
     def update_theme(self) -> None:
         """Called when theme changes."""
@@ -86,7 +99,7 @@ class MenuBar(ttk.Frame):
         self._row.pack_propagate(False)
 
     def add_menu(self, label: str, gap_before: int = 0) -> _Submenu:
-        """Add a menu button with dropdown."""
+        """Add a menu button with dropdown (VS Code style - no arrow)."""
         holder = ttk.Frame(self._row, style="Menubar.TFrame")
         holder.grid(row=0, column=self._columns, sticky="w",
                     padx=(gap_before if self._columns else 0, 0))
@@ -99,7 +112,7 @@ class MenuBar(ttk.Frame):
             self,
             tearoff=0,
         )
-        button.configure(menu=menu)
+        button.set_menu(menu)
         return _Submenu(menu)
 
     def register_command(self, category: str, label: str,

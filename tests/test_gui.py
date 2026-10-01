@@ -92,19 +92,21 @@ def main() -> int:
         for child in widget.winfo_children():
             yield from walk(child)
 
+    # Menubar sekarang pakai TButton (bukan Menubutton) dengan menu attached via set_menu
     buttons = [
-        w for w in walk(app._menubar)
-        if w.winfo_class() == "TMenubutton"
+        w for w in walk(app._menubar._row)
+        if w.winfo_class() == "TButton"
     ]
-    check("menubar pakai Menubutton", len(buttons) >= 8, f"n={len(buttons)}")
+    check("menubar pakai Button (VS Code style)", len(buttons) >= 8, f"n={len(buttons)}")
     populated = 0
     for button in buttons:
-        menu = app.nametowidget(button.cget("menu"))
-        try:
-            if int(menu.index("end")) >= 0:
-                populated += 1
-        except (ValueError, tk.TclError):
-            pass
+        menu = getattr(button, '_menu', None)
+        if menu:
+            try:
+                if int(menu.index("end")) >= 0:
+                    populated += 1
+            except (ValueError, tk.TclError):
+                pass
     check("semua dropdown terisi", populated == len(buttons), f"{populated}/{len(buttons)}")
     check("nama tombol ada", any(b.cget("text") == "File" for b in buttons))
     check("menu Bantuan terpisah", any(b.cget("text") == "Bantuan" for b in buttons))

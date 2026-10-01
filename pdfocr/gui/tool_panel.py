@@ -159,6 +159,14 @@ class ToolPanel(ttk.Frame):
         self.result.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         self.result.grid_remove()
 
+        # Back button - kembali ke tampilan halaman/OCR
+        self.back_btn = ttk.Button(
+            self, text="← Kembali ke Halaman", style="Ghost.TButton",
+            command=self._go_back_to_page
+        )
+        self.back_btn.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        self.back_btn.grid_remove()
+
         self._show_placeholder()
 
     # -------------------------------------------------------------------- form
@@ -201,7 +209,14 @@ class ToolPanel(ttk.Frame):
         self.title.grid_remove()
         self.hint.grid_remove()
         self.scroll.grid_remove()
+        self.back_btn.grid_remove()
         self.placeholder.grid()
+
+    def _go_back_to_page(self) -> None:
+        """Kembali ke tampilan halaman/OCR."""
+        if hasattr(self.host, 'show_page'):
+            self.host.show_page()
+        self.back_btn.grid_remove()
 
     def report(self, headline: str, body: str = "", tone: str = "info") -> None:
         """Tulis pesan ke kotak hasil panel ini."""
@@ -230,6 +245,7 @@ class ToolPanel(ttk.Frame):
         self.title.grid()
         self.hint.grid()
         self.scroll.grid()
+        self.back_btn.grid()
 
         self.title.configure(text=spec.label)
         self.hint.configure(text=spec.description or "")
