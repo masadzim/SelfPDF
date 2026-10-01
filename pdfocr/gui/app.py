@@ -42,7 +42,15 @@ from ..tools.base import (
     INPUT_PDF,
     INPUT_PDF_MULTI,
 )
-from .app_colors import ACCENT, BG, BG_PANEL, FG, FG_DIM, OK, WARN
+from .app_colors import (
+    ACCENT, BG, BG_PANEL, FG, FG_DIM, OK, WARN,
+    get_theme,
+    SPACE_4, SPACE_5,
+    TOOLBAR_HEIGHT,
+    HEADER_HEIGHT,
+    RADIUS_MD,
+)
+from .header import setup_header_styles
 from .branding import (
     APP_NAME,
     APP_TAGLINE,
@@ -51,8 +59,8 @@ from .branding import (
     apply_window_icon,
 )
 from .feedback import ResultView
-from .header import HeaderBar
-from .menubar import MenuBar, menubar_divider, setup_menubar_styles
+from .header import HeaderBar, setup_header_styles
+from .menubar import MenuBar, menubar_divider, setup_menubar_styles, CommandPalette
 from .page_grid import PageGrid
 from .thumbs import ThumbCache
 from .tool_panel import ToolPanel
@@ -187,6 +195,7 @@ class MainWindow(tk.Tk):
         self._build_header()
         self._build_menubar()
         self._build_ui()
+        self._bind_shortcuts()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(80, self._drain_events)
         self.after(120, self._check_tesseract)
@@ -194,14 +203,16 @@ class MainWindow(tk.Tk):
     # ------------------------------------------------------------------ header
 
     def _build_header(self) -> None:
+        """Build modern header with toolbar: identity left, actions right."""
         self.header = HeaderBar(
             self,
             actions=[
-                ("Gabung & Simpan", self._save, "Accent.TButton"),
-                ("Jalankan", self._run_active_tool, "App.TButton"),
-                ("Bersihkan", self._clear_all, "App.TButton"),
-                (DEFAULT_ADD_LABEL, self._add_files, "App.TButton"),
+                ("Gabung & Simpan", self._save, "Primary.TButton", "Ctrl+S", "Simpan hasil sebagai PDF"),
+                ("Jalankan", self._run_active_tool, "Primary.TButton", "Ctrl+R", "Jalankan tool aktif"),
+                ("Bersihkan", self._clear_all, "Ghost.TButton", "Ctrl+Delete", "Hapus semua berkas dari preview"),
+                (DEFAULT_ADD_LABEL, self._add_files, "Ghost.TButton", "Ctrl+O", "Tambah berkas ke preview"),
             ],
+            tagline=APP_TAGLINE,
         )
         self.header.pack(fill="x")
         for button in self.header.action_buttons:
@@ -213,31 +224,45 @@ class MainWindow(tk.Tk):
     def _build_menubar(self) -> None:
         from ..tools import MENU_ORDER, grouped
 
-        # Menubar disusun sebagai widget di dalam jendela, bukan `tk.Menu`
-        # native. Lihat pdfocr/gui/menubar.py untuk alasannya.
+        # Modern in-window menubar with command palette support
         bar = MenuBar(self)
         bar.pack(fill="x")
         menubar_divider(self)
         self._menubar = bar
 
+        # File menu
         file_menu = bar.add_menu("File")
-        file_menu.add_command("Tambah Berkas…", self._add_files)
-        file_menu.add_command("Gabung & Simpan…", self._save)
+        file_menu.add_command("Tambah Berkas…", self._add_files, "Ctrl+O")
+        file_menu.add_command("Gabung & Simpan…", self._save, "Ctrl+S")
         file_menu.add_separator()
-        file_menu.add_command("Kosongkan Proyek", self._clear_all)
+        file_menu.add_command("Kosongkan Proyek", self._clear_all, "Ctrl+Delete")
         file_menu.add_separator()
-        file_menu.add_command("Keluar", self._on_close)
+        file_menu.add_command("Keluar", self._on_close, "Ctrl+Q")
 
+        bar.register_command("File", "Tambah Berkas…", self._add_files, "Ctrl+O", "file-plus")
+        bar.register_command("File", "Gabung & Simpan…", self._save, "Ctrl+S", "file-save")
+        bar.register_command("File", "Kosongkan Proyek", self._clear_all, "Ctrl+Delete", "trash")
+        bar.register_command("File", "Keluar", self._on_close, "Ctrl+Q", "log-out")
+
+        # Edit menu
         edit_menu = bar.add_menu("Edit")
-        edit_menu.add_command("Putar 90° Kiri", lambda: self._rotate_selected(-90))
-        edit_menu.add_command("Putar 90° Kanan", lambda: self._rotate_selected(90))
+        edit_menu.add_command("Putar 90° Kiri", lambda: self._rotate_selected(-90), "Ctrl+[")
+        edit_menu.add_command("Putar 90° Kanan", lambda: self._rotate_selected(90), "Ctrl+]")
         edit_menu.add_separator()
-        edit_menu.add_command("Duplikat Halaman", self._duplicate_selected)
-        edit_menu.add_command("Hapus Halaman Terpilih", self._delete_selected)
+        edit_menu.add_command("Duplikat Halaman", self._duplicate_selected, "Ctrl+D")
+        edit_menu.add_command("Hapus Halaman Terpilih", self._delete_selected, "Delete")
         edit_menu.add_separator()
-        edit_menu.add_command("OCR Semua Halaman", lambda: self._start_ocr(None))
-        edit_menu.add_command("OCR Halaman Terpilih", lambda: self._start_ocr("selected"))
+        edit_menu.add_command("OCR Semua Halaman", lambda: self._start_ocr(None), "Ctrl+Shift+O")
+        edit_menu.add_command("OCR Halaman Terpilih", lambda: self._start_ocr("selected"), "Ctrl+O")
 
+        bar.register_command("Edit", "Putar Kiri", lambda: self._rotate_selected(-90), "Ctrl+[", "rotate-ccw")
+        bar.register_command("Edit", "Putar Kanan", lambda: self._rotate_selected(90), "Ctrl+]", "rotate-cw")
+        bar.register_command("Edit", "Duplikat Halaman", self._duplicate_selected, "Ctrl+D", "copy")
+        bar.register_command("Edit", "Hapus Halaman", self._delete_selected, "Delete", "trash-2")
+        bar.register_command("Edit", "OCR Semua", lambda: self._start_ocr(None), "Ctrl+Shift+O", "scan-text")
+        bar.register_command("Edit", "OCR Terpilih", lambda: self._start_ocr("selected"), "Ctrl+O", "scan-text")
+
+        # Tool categories from grouped()
         groups = grouped()
         for name in MENU_ORDER:
             specs = groups.get(name, [])
@@ -246,11 +271,92 @@ class MainWindow(tk.Tk):
             menu = bar.add_menu(name)
             for spec in specs:
                 menu.add_command(spec.label, lambda s=spec: self._open_tool(s))
+                bar.register_command(name, spec.label, lambda s=spec: self._open_tool(s), "", spec.icon_name if hasattr(spec, 'icon_name') else "")
 
-        # "Bantuan" diberi jarak extra supaya tidak menempel dengan menu kategori.
+        # Help menu
         help_menu = bar.add_menu("Bantuan", gap_before=18)
-        help_menu.add_command("Cara Pakai", self._show_help)
+        help_menu.add_command("Cara Pakai", self._show_help, "F1")
         help_menu.add_command("Tentang", self._show_about)
+
+        bar.register_command("Bantuan", "Cara Pakai", self._show_help, "F1", "help-circle")
+        bar.register_command("Bantuan", "Tentang", self._show_about, "", "info")
+
+        self._menubar = bar
+
+        # Command palette (Ctrl+K)
+        self._command_palette = CommandPalette(
+            self,
+            bar.get_all_commands(),
+            on_execute=lambda cmd: cmd(),
+        )
+        self.bind_all("<Control-k>", lambda e: self._command_palette.show(self.header))
+        self.bind_all("<Control-K>", lambda e: self._command_palette.show(self.header))
+
+    def _bind_shortcuts(self) -> None:
+        """Bind global keyboard shortcuts for common actions."""
+        # File operations
+        self.bind_all("<Control-o>", lambda e: self._add_files())
+        self.bind_all("<Control-s>", lambda e: self._save())
+        self.bind_all("<Control-q>", lambda e: self._on_close())
+        self.bind_all("<Control-Delete>", lambda e: self._clear_all())
+
+        # Edit operations
+        self.bind_all("<Control-d>", lambda e: self._duplicate_selected())
+        self.bind_all("<Delete>", lambda e: self._delete_selected())
+        self.bind_all("<Control-bracketleft>", lambda e: self._rotate_selected(-90))
+        self.bind_all("<Control-bracketright>", lambda e: self._rotate_selected(90))
+        self.bind_all("<Control-Shift-O>", lambda e: self._start_ocr(None))
+        self.bind_all("<Control-o>", lambda e: self._start_ocr("selected"))
+        self.bind_all("<Control-Shift-O>", lambda e: self._start_ocr(None))
+
+        # OCR shortcuts
+        self.bind_all("<Control-Shift-O>", lambda e: self._start_ocr(None))
+
+        # Help
+        self.bind_all("<F1>", lambda e: self._show_help())
+
+        # Theme toggle
+        self.bind_all("<Control-t>", lambda e: self._toggle_theme())
+
+        # Command palette
+        self.bind_all("<Control-k>", lambda e: self._command_palette.show(self.header))
+        self.bind_all("<Control-K>", lambda e: self._command_palette.show(self.header))
+
+        # Navigation
+        self.bind_all("<Escape>", lambda e: self._escape_pressed())
+
+    def _escape_pressed(self) -> None:
+        """Handle Escape key - close dialogs, clear selection, hide palettes."""
+        # Hide command palette
+        if hasattr(self, '_command_palette') and self._command_palette.winfo_exists():
+            self._command_palette.hide()
+        # Clear grid selection
+        if hasattr(self, 'grid') and self.grid.selection:
+            self.grid.clear_selection()
+            self._refresh_thumbs()
+        # If tool panel is active, go back to page view
+        if hasattr(self, 'tools') and self.tools.spec is not None:
+            self.show_page()
+            self._refresh_file_list()
+
+    def _toggle_theme(self) -> None:
+        """Toggle between light and dark theme."""
+        from .app_colors import get_theme, toggle_theme, set_theme
+        new_theme = toggle_theme()
+        # Re-apply styles
+        _configure_styles(self)
+        # Refresh header theme
+        self.header._theme = get_theme()
+        # Update all widgets that need theme refresh
+        self._apply_theme_to_children(self)
+        self.set_status(f"Tema: {'Gelap' if new_theme == 'dark' else 'Terang'}")
+
+    def _apply_theme_to_children(self, widget: tk.Misc) -> None:
+        """Recursively apply theme to all children that have update_theme method."""
+        for child in widget.winfo_children():
+            if hasattr(child, 'update_theme'):
+                child.update_theme()
+            self._apply_theme_to_children(child)
 
     def _open_tool(self, spec) -> None:
         """Dipanggil hanya dari menubar.
