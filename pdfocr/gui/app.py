@@ -50,7 +50,7 @@ from .app_colors import (
     HEADER_HEIGHT,
     RADIUS_MD,
 )
-from .header import setup_header_styles
+from .header import HeaderBar, setup_header_styles
 from .branding import (
     APP_NAME,
     APP_TAGLINE,
@@ -59,7 +59,6 @@ from .branding import (
     apply_window_icon,
 )
 from .feedback import ResultView
-from .header import HeaderBar, setup_header_styles
 from .menubar import MenuBar, menubar_divider, setup_menubar_styles, CommandPalette
 from .page_grid import PageGrid
 from .thumbs import ThumbCache
@@ -112,6 +111,7 @@ def _configure_styles(root: tk.Tk) -> ttk.Style:
     except tk.TclError:
         pass
 
+    setup_header_styles(style)
     setup_menubar_styles(style)
 
     style.configure("App.TFrame", background=BG)
@@ -253,7 +253,8 @@ class MainWindow(tk.Tk):
         edit_menu.add_command("Hapus Halaman Terpilih", self._delete_selected, "Delete")
         edit_menu.add_separator()
         edit_menu.add_command("OCR Semua Halaman", lambda: self._start_ocr(None), "Ctrl+Shift+O")
-        edit_menu.add_command("OCR Halaman Terpilih", lambda: self._start_ocr("selected"), "Ctrl+O")
+        edit_menu.add_command("OCR Halaman Terpilih", lambda: self._start_ocr("selected"),
+                              "Ctrl+Shift+E")
 
         bar.register_command("Edit", "Putar Kiri", lambda: self._rotate_selected(-90), "Ctrl+[", "rotate-ccw")
         bar.register_command("Edit", "Putar Kanan", lambda: self._rotate_selected(90), "Ctrl+]", "rotate-cw")
@@ -293,24 +294,32 @@ class MainWindow(tk.Tk):
         self.bind_all("<Control-K>", lambda e: self._command_palette.show(self.header))
 
     def _bind_shortcuts(self) -> None:
-        """Bind global keyboard shortcuts for common actions."""
+        """Bind global keyboard shortcuts for common actions.
+
+        Setiap urutan tombol hanya boleh di-bind **satu kali**. `bind_all`
+        tanpa `add="+"` menggantikan binding sebelumnya, jadi dua bind untuk
+        `Ctrl+O` membuat yang terakhir menang dan tombol yang tampil di menu
+        justru tidak bisa dipakai.
+        """
         # File operations
         self.bind_all("<Control-o>", lambda e: self._add_files())
         self.bind_all("<Control-s>", lambda e: self._save())
         self.bind_all("<Control-q>", lambda e: self._on_close())
         self.bind_all("<Control-Delete>", lambda e: self._clear_all())
 
+        # Jalankan tool aktif (sesuai pintasan yang tampil di header)
+        self.bind_all("<Control-r>", lambda e: self._run_active_tool())
+
         # Edit operations
         self.bind_all("<Control-d>", lambda e: self._duplicate_selected())
         self.bind_all("<Delete>", lambda e: self._delete_selected())
         self.bind_all("<Control-bracketleft>", lambda e: self._rotate_selected(-90))
         self.bind_all("<Control-bracketright>", lambda e: self._rotate_selected(90))
-        self.bind_all("<Control-Shift-O>", lambda e: self._start_ocr(None))
-        self.bind_all("<Control-o>", lambda e: self._start_ocr("selected"))
-        self.bind_all("<Control-Shift-O>", lambda e: self._start_ocr(None))
 
-        # OCR shortcuts
+        # OCR — Ctrl+Shift+O untuk semua halaman. OCR halaman terpilih memakai
+        # Ctrl+Shift+E karena `Ctrl+O` sudah dipakai "Tambah Berkas".
         self.bind_all("<Control-Shift-O>", lambda e: self._start_ocr(None))
+        self.bind_all("<Control-Shift-E>", lambda e: self._start_ocr("selected"))
 
         # Help
         self.bind_all("<F1>", lambda e: self._show_help())
@@ -320,7 +329,6 @@ class MainWindow(tk.Tk):
 
         # Command palette
         self.bind_all("<Control-k>", lambda e: self._command_palette.show(self.header))
-        self.bind_all("<Control-K>", lambda e: self._command_palette.show(self.header))
 
         # Navigation
         self.bind_all("<Escape>", lambda e: self._escape_pressed())
@@ -341,11 +349,12 @@ class MainWindow(tk.Tk):
 
     def _toggle_theme(self) -> None:
         """Toggle between light and dark theme."""
-        from .app_colors import get_theme, toggle_theme, set_theme
+        from .app_colors import toggle_theme
         new_theme = toggle_theme()
         # Re-apply styles
         _configure_styles(self)
         # Refresh header theme
+        from .app_colors import get_theme
         self.header._theme = get_theme()
         # Update all widgets that need theme refresh
         self._apply_theme_to_children(self)
@@ -752,6 +761,8 @@ class MainWindow(tk.Tk):
                 return
 
     def _clear_all(self) -> None:
+        if self._busy_process():
+            return
         if not self.project.files and not self.project.pages:
             return
         if not messagebox.askyesno("Kosongkan daftar", "Hapus semua berkas dari daftar?",
@@ -786,7 +797,8 @@ class MainWindow(tk.Tk):
             page = source.doc[ref.src_index]
             base_rotation = page.rotation
             photo = self.thumbs.get_page(
-                page, ref.doc_key, ref.src_index, ref.rotation, base_rotation, THUMB_HEIGHT
+                page, ref.doc_key, ref.src_index, ref.rotation, base_rotation,
+                THUMB_HEIGHT, master=self,
             )
         except Exception:  # noqa: BLE001
             photo = None
@@ -892,9 +904,22 @@ class MainWindow(tk.Tk):
     def _delete_selected(self) -> None:
         self._delete(self._selected_or_active())
 
+    def _busy_process(self) -> bool:
+        """True kalau ada proses background yang sedang memakai dokumen proyek."""
+        ocr_busy = self._worker is not None and self._worker.is_alive()
+        if ocr_busy:
+            self.set_status("Tunggu proses yang sedang berjalan selesai.")
+            return True
+        if self.tools.is_busy:
+            self.set_status("Perkakas sedang berjalan; tunggu selesai dulu.")
+            return True
+        return False
+
     def _delete(self, indices: list[int]) -> None:
         if not indices:
             self.set_status("Pilih halaman yang ingin dihapus lebih dulu.")
+            return
+        if self._busy_process():
             return
         self.project.remove_many(indices)
         self.grid.clear_selection()
@@ -940,6 +965,11 @@ class MainWindow(tk.Tk):
             )
 
     def _start_ocr(self, scope: str | None) -> None:
+        """Pintasan OCR dari tombol/menubar: `None` = semua, `"selected"`.
+
+        Daftar indeks yang perlu di-OCR ditentukan di sini, lalu diserahkan ke
+        `_run_ocr` — jalur yang sama dipakai klik ganda dan menu klik kanan.
+        """
         if self._worker is not None and self._worker.is_alive():
             self.set_status("Proses OCR sebelumnya belum selesai.")
             return
@@ -959,6 +989,9 @@ class MainWindow(tk.Tk):
                 if not ref.is_ocr_done
             ]
             if not indices:
+                if not self.project.pages:
+                    self.set_status("Belum ada halaman untuk di-OCR.")
+                    return
                 if not messagebox.askyesno(
                     "Semua sudah di-OCR", "Semua halaman sudah punya teks OCR. OCR ulang semua?",
                     parent=self,
@@ -966,18 +999,48 @@ class MainWindow(tk.Tk):
                     return
                 indices = list(range(len(self.project.pages)))
 
-        if not indices:
+        self._run_ocr(indices)
+
+    def _run_ocr(self, indices: list[int]) -> None:
+        """Jalankan OCR pada indeks halaman tertentu.
+
+        Dipakai tiga tempat: tombol OCR, klik ganda thumbnail, dan item menu
+        "OCR halaman ini". Ketiganya memakai jalur yang sama supaya tidak ada
+        pintasan OCR yang bisa gagal hanya karena tidak punya method.
+        """
+        if self._worker is not None and self._worker.is_alive():
+            self.set_status("Proses OCR sebelumnya belum selesai.")
+            return
+        if self.tools.is_busy:
+            self.set_status("Perkakas sedang berjalan; tunggu selesai dulu.")
+            return
+
+        wanted = [i for i in indices if 0 <= i < len(self.project.pages)]
+        if not wanted:
+            self.set_status("Tidak ada halaman yang bisa di-OCR.")
             return
 
         try:
-            check_available(self.lang_var.get())
+            lang = self.lang_var.get()
+            check_available(lang)
         except OcrUnavailable as exc:
             messagebox.showerror("OCR tidak tersedia", str(exc), parent=self)
             return
 
-        self._jobs = [
-            OcrJob(index, self._page_for(index), self.lang_var.get()) for index in indices
-        ]
+        # `page_at` mengembalikan objek halaman PyMuPDF milik dokumen sumber.
+        # Dokumen itu dipakai worker thread, jadi halaman yang sudah ditutup
+        # (mis. karena proyek dikosongkan) harus dilewati, bukan diteruskan.
+        jobs: list[OcrJob] = []
+        for index in wanted:
+            try:
+                jobs.append(OcrJob(index, self._page_for(index), lang))
+            except Exception:  # noqa: BLE001 - sumber sudah tidak ada
+                continue
+        if not jobs:
+            self.set_status("Halaman tidak tersedia untuk di-OCR.")
+            return
+
+        self._jobs = jobs
         self.progress.configure(maximum=len(self._jobs), value=0)
         self._set_running(True, "OCR berjalan…")
         self.page_result.show("OCR berjalan", f"{len(self._jobs)} halaman dikirim ke mesin OCR.")
@@ -1050,16 +1113,24 @@ class MainWindow(tk.Tk):
         self.after(80, self._drain_events)
 
     def _set_running(self, running: bool, note: str = "") -> None:
-        """Matikan tombol & input selama proses background berjalan.
+        """Matikan tombol, input, dan grid selama proses background berjalan.
 
         Combobox/entry dikembalikan ke state aslinya (bukan `normal`),
         supaya tetap `readonly`.
+
+        Grid ikut dinonaktifkan karena worker berjalan di thread lain dan
+        masih memakai dokumen sumber proyek. Menghapus halaman saat itu bisa
+        menutup dokumen yang sedang dirender.
         """
         for widget in self._lockable:
             try:
                 widget.configure(state="disabled" if running else self._restore_state(widget))
             except tk.TclError:
                 pass
+        try:
+            self.grid.set_enabled(not running)
+        except tk.TclError:
+            pass
         if note:
             self.set_status(note)
         self.update_idletasks()

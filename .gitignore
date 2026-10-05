@@ -15,3 +15,15 @@ __pycache__/
 
 # Output aplikasi
 *.log
+
+# Output build
+build/
+dist/
+*.spec.bak
+
+# Icon turunan hasil build Windows
+assets/icon.ico
+
+# Berkas paket
+*.deb
+*.exe

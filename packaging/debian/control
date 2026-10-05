@@ -1,0 +1,36 @@
+Source: selfpdf
+Section: utils
+Priority: optional
+Maintainer: SelfPDF Contributors <support@adzim.my.id>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ python3-all,
+ python3-setuptools,
+Standards-Version: 4.6.2
+Homepage: https://github.com/masadzim/SelfPDF-Desktop
+Rules-Requires-Root: no
+
+Package: selfpdf
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3-tk,
+ tesseract-ocr,
+ ghostscript,
+Recommends:
+ tesseract-ocr-eng,
+ tesseract-ocr-osd,
+ icc-profiles-free,
+ libreoffice,
+Description: SelfPDF — OCR, reorder visual, dan 30 perkakas PDF
+ SelfPDF adalah aplikasi desktop untuk menggabungkan beberapa PDF secara
+ visual (seret thumbnail untuk mengurutkan ulang), menjalankan OCR English,
+ dan menyimpan hasilnya sebagai PDF yang bisa dicari.
+ .
+ Aplikasi ini membawa 30 perkakas PDF dalam satu panel in-window: organize,
+ optimize, konversi ke/dari PDF, edit, keamanan (termasuk tanda tangan
+ digital dan redaksi), serta PDF to Markdown.
+ .
+ Semua proses berjalan lokal. Tidak ada telemetri, iklan, atau pelacak.

@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Optional, Sequence
+from typing import Callable, Sequence
 
 from .branding import (
     APP_NAME,
-    APP_TAGLINE,
     find_logo,
     find_wordmark,
     load_logo,
@@ -82,7 +81,6 @@ class ToolTip:
         tip.wm_overrideredirect(True)
         tip.wm_attributes("-topmost", True)
         bg = theme.bg_raised
-        fg = theme.fg
         tip.configure(bg=bg)
         label = tk.Label(
             tip,
@@ -140,10 +138,6 @@ class HeaderBar(ttk.Frame):
         self.configure(height=TOOLBAR_HEIGHT)
         self.pack_propagate(False)
 
-        # Left: identity block
-        identity = ttk.Frame(self, style="Header.TFrame")
-        identity.pack(side="left", fill="y", padx=(16, 0))
-
         # Wordmark or logo + text
         self.logo_photo: tk.PhotoImage | None = None
         self.uses_wordmark = False
@@ -158,19 +152,19 @@ class HeaderBar(ttk.Frame):
         if self.logo_photo is not None:
             label = ttk.Label(self, image=self.logo_photo, style="Header.TLabel")
             label.image = self.logo_photo  # type: ignore[attr-defined]
-            label.pack(side="left", anchor="n", padx=(0, 12))
+            label.pack(side="left", anchor="n", padx=(16, 12))
         elif logo_path:
             self.logo_photo = load_logo(self, logo_path)
             if self.logo_photo is not None:
                 label = ttk.Label(self, image=self.logo_photo, style="Header.TLabel")
                 label.image = self.logo_photo  # type: ignore[attr-defined]
-                label.pack(side="left", anchor="n", padx=(0, 12))
+                label.pack(side="left", anchor="n", padx=(16, 12))
 
         show_name = self.logo_photo is None or (self.uses_wordmark is False)
 
         if show_name:
             texts = ttk.Frame(self, style="Header.TFrame")
-            texts.pack(side="left", fill="y", padx=(0, 12))
+            texts.pack(side="left", fill="y", padx=(16, 12))
             ttk.Label(texts, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
             if tagline:
                 ttk.Label(texts, text=tagline, style="Tagline.TLabel").pack(anchor="w")
@@ -191,9 +185,6 @@ class HeaderBar(ttk.Frame):
             )
             btn.pack(side="right", padx=(8, 0))
             self.action_buttons.append(btn)
-
-        # Fill remaining space with identity
-        identity.pack(fill="y", expand=True, side="left")
 
     @property
     def brand(self) -> "HeaderBar":

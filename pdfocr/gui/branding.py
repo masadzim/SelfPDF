@@ -82,17 +82,32 @@ KEY_MIN_KEEP = 0.01
 def assets_dir() -> str:
     """Folder aset.
 
-    Urutan: folder `assets/` di samping paket, lalu yang di dalam paket.
+    Urutan: folder bundel PyInstaller (`sys._MEIPASS`), folder `assets/` di
+    samping paket, lalu yang di dalam paket.
+
+    `sys._MEIPASS` harus diperiksa lebih dulu: saat beku, `__file__` menunjuk
+    ke direktori sementara PyInstaller, bukan ke folder proyek. Kandidat
+    `sys.prefix` sengaja tidak dipakai — itu prefix interpreter/venv, bukan
+    lokasi yang pernah diisi PyInstaller, sehingga bisa diam-diam menunjuk ke
+    folder `assets` milik program lain.
     """
     here = os.path.dirname(os.path.abspath(__file__))          # pdfocr/gui
     pkg = os.path.dirname(os.path.dirname(here))                # pdfocr
     root = os.path.dirname(pkg)                                 # akar proyek
-    for candidate in (os.path.join(root, "assets"),
-                      os.path.join(pkg, "assets"),
-                      os.path.join(sys.prefix, "assets")):
+
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(os.path.join(meipass, "assets"))
+    candidates += [
+        os.path.join(root, "assets"),
+        os.path.join(pkg, "assets"),
+        os.path.join(os.path.dirname(sys.executable), "assets"),
+    ]
+    for candidate in candidates:
         if os.path.isdir(candidate):
             return candidate
-    return os.path.join(root, "assets")
+    return candidates[0] if meipass else os.path.join(root, "assets")
 
 
 def _asset_index() -> dict[str, str]:
@@ -398,16 +413,19 @@ def apply_window_icon(root: tk.Misc) -> bool:
         root.iconphoto(True, photo)
         root._icon_photo = photo  # type: ignore[attr-defined]
 
-        # iconbitmap: butuh .ico di Windows.
-        try:
-            with tempfile.TemporaryDirectory(prefix="selfpdf_icon_") as tmp:
+        # `iconbitmap` hanya berguna di Windows, dan file .ico harus tetap ada
+        # selama jendela hidup. Folder sementara karena itu tidak boleh dihapus
+        # di akhir blok `with`.
+        if os.name == "nt":
+            try:
+                tmp = tempfile.mkdtemp(prefix="selfpdf_icon_")
                 ico = os.path.join(tmp, "icon.ico")
                 keep = sorted({s for s in ICON_SIZES if s <= max(image.size)} | {max(image.size)})
                 image.save(ico, format="ICO", sizes=[(s, s) for s in keep])
                 root.iconbitmap(ico)
                 root._icon_ico_dir = tmp  # type: ignore[attr-defined]
-        except Exception:
-            pass
+            except Exception:
+                pass
         return True
     except Exception:
         return False

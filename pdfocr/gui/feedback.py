@@ -18,7 +18,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Sequence
 
-from .app_colors import BG_PANEL, FG, FG_DIM, OK, WARN
+from .app_colors import FG, FG_DIM, OK, WARN
 
 ERROR = "#ff7b72"
 

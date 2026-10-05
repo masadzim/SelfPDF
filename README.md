@@ -3,16 +3,11 @@
 Aplikasi desktop (Tkinter) untuk menggabungkan beberapa PDF **secara visual** —
 geser thumbnail halaman untuk mengurutkan ulang — sekaligus menjalankan **OCR
 English** dan menyimpan hasilnya sebagai PDF yang bisa dicari, ditambah satu
-bar menu berisi 26 perkakas PDF.
+bar menu berisi 30 perkakas PDF.
 
-## Cara pakai
+> **Rilis:** pasang `.deb` (Debian/Ubuntu) atau `.exe` (Windows) — lihat
+> [Memasang paket jadi](#memasang-paket-jadi). SelfPDF berlisensi MIT.
 
-1. Klik **+ Tambah PDF** di baris atas — semua pekerjaan lewat tombol ini.
-2. Berkas langsung **muncul di preview** (grid thumbnail di kiri).
-3. Pilih perkakas dari **menubar**, isi parameternya, lalu klik **Jalankan**.
-
-Tidak ada tombol "+Tambah" per tool, dan tidak ada daftar berkas terpisah di
-dalam form. Satu preview, satu tombol, semua pekerjaan.
 
 ## Fitur inti
 
@@ -104,6 +99,45 @@ Rentang halaman ditulis seperti `1-3, 5, 8-`; mengosongkan berarti semua halaman
 Tool yang butuh Ghostscript atau LibreOffice akan memberi pesan jelas bila
 programnya belum ada; tool lain tetap berfungsi.
 
+## Memasang paket jadi
+
+Paket rilis sudah memuat interpreter dan seluruh library Python, jadi tidak
+perlu `pip install` apa pun.
+
+### Debian / Ubuntu
+
+```bash
+sudo apt install ./SelfPDF-Linux.deb
+selfpdf
+```
+
+### Windows
+
+Jalankan `SelfPDF-Windows.exe`. Windows SmartScreen bisa menampilkan
+peringatan untuk aplikasi yang belum ditandatangani — pilih **More info →
+Run anyway**.
+
+Tesseract tidak dibundel. Agar OCR jalan di Windows, pasang
+[Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) dan centang
+*Add to PATH* saat instalasi. Tanpa Tesseract, semua fitur lain tetap
+berfungsi.
+
+## Membangun sendiri
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+./packaging/build_exe.sh    # binary mandiri (Linux/macOS/Windows)
+./packaging/build_deb.sh    # paket .deb
+```
+
+Hasil build ada di `dist/` dan `build/deb/`.
+
+> **Penting:** PyInstaller tidak bisa lintas-platform, jadi `SelfPDF.exe` hanya
+> bisa dibangun di Windows. Workflow `.github/workflows/build.yml` sudah
+> menangani ini — jalankan pada tag `v*` untuk menghasilkan `.exe` dan `.deb`
+> sekaligus, lalu simpan keduanya sebagai GitHub Release.
+
 ## Menjalankan
 
 ```bash
@@ -114,46 +148,6 @@ python3 -m venv .venv
 
 Kalau `tesseract` belum terpasang, aplikasi tetap jalan — catatan peringatan
 menampilkan perintah instalasinya, dan semua fitur selain OCR tetap berfungsi.
-
-### Ekstensi OCR Rust (eksperimental, tidak dipakai aplikasi)
-
-Ekstensi ini **tidak dipakai aplikasi ini** dan sudah dipindahkan keluar dari
-repo ke `~/Downloads/selfpdf_ocr/`. Seluruh OCR pada GUI memakai Tesseract
-(`pdfocr/ocr.py`), jadi semua fitur tetap berjalan tanpa folder tersebut.
-
-Eksperimen ini memakai `ocrs`. Perlu Rust/Cargo, virtual environment,
-`maturin`, dan dua model `ocrs` format `.rten`; model tidak disertakan.
-Setelah pindah ke luar repo, aktifkan dulu virtual environment tujuan, lalu:
-
-```bash
-cd ~/Downloads/selfpdf_ocr
-curl -fL https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten \
-  -o text-detection.rten
-curl -fL https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten \
-  -o text-recognition.rten
-pip install 'maturin>=1.7,<2'
-maturin develop --release
-```
-
-Contoh pemakaian setelah dibangun:
-
-```python
-from selfpdf_ocr import OcrEngine
-
-engine = OcrEngine("text-detection.rten", "text-recognition.rten")
-result = engine.ocr_file("scan.png")
-print(result.text)
-```
-
-`ocr_bytes(bytes)` menerima data gambar PNG/JPEG, sementara
-`ocr_batch(list[str])` menjalankan OCR pada beberapa file secara berurutan.
-Kesalahan model, file, dan format gambar dilaporkan sebagai exception Python.
-
-Keterbatasan yang membuatnya belum bisa menggantikan Tesseract: `OcrResult`
-hanya mengembalikan teks, tanpa koordinat tiap kata. Fitur inti aplikasi ini
-(searchable PDF, `search_text`, badge OCR) membutuhkan posisi kata, jadi
-penggunaannya memerlukan `get_text_with_locations` dari `ocrs` yang belum
-di-bind.
 
 ## Cara pakai
 
@@ -206,6 +200,11 @@ pdfocr/
     thumbs.py           cache thumbnail
     tool_panel.py       isi panel saat perkakas dipilih: form, progres, hasil
     feedback.py         kotak hasil inline + buka folder
+packaging/
+  build_exe.sh          binary mandiri via PyInstaller
+  build_deb.sh          paket .deb untuk Debian/Ubuntu
+  debian/              metadata paket (control, .desktop)
+SelfPDF.spec           spec PyInstaller
 tests/
   test_core.py          tes logika inti (tanpa GUI)
   test_tools.py         tes seluruh perkakas PDF
@@ -235,3 +234,32 @@ kali. Pencarian berkas tidak membedakan huruf besar-kecil. Lihat
 xvfb-run -a .venv/bin/python tests/test_gui.py
 xvfb-run -a .venv/bin/python tests/test_gui_interactive.py
 ```
+
+CI yang sama berjalan otomatis di `.github/workflows/build.yml` untuk setiap
+push dan pull request.
+
+## Lisensi
+
+MIT — lihat [`LICENSE`](LICENSE).
+
+Kontribusi diterima. Dengan mengirim pull request, Anda setuju bahwa
+kontribusi Anda lisensikan di bawah MIT yang sama.
+
+## Pintasan keyboard
+
+| Pintasan | Aksi |
+|---|---|
+| `Ctrl+O` | Tambah berkas ke preview |
+| `Ctrl+S` | Gabung & Simpan |
+| `Ctrl+R` | Jalankan perkakas yang aktif |
+| `Ctrl+K` | Command palette |
+| `Ctrl+D` | Duplikat halaman |
+| `Delete` | Hapus halaman terpilih |
+| `Ctrl+[` / `Ctrl+]` | Putar kiri / kanan |
+| `Ctrl+Shift+O` | OCR semua halaman |
+| `Ctrl+Shift+E` | OCR halaman terpilih |
+| `Ctrl+T` | Ganti tema terang / gelap |
+| `Ctrl+Delete` | Kosongkan proyek |
+| `F1` | Cara pakai |
+| `Esc` | Tutup palette / batalkan seleksi |
+| `Ctrl+Q` | Keluar |

@@ -116,8 +116,13 @@ class PageGrid(ttk.Frame):
         # Configure pada canvas jauh lebih andal daripada pada PageGrid: ia
         # selalu memicu saat area terlihat berubah, termasuk saat halaman
         # ditambahkan setelah jendela selesai dirender.
-        self.scroller.canvas.bind("<Configure>", self._on_resize)
-        self.bind("<Configure>", self._on_resize)
+        #
+        # `add="+"` itu wajib: `ScrollFrame` juga memasang `<Configure>` di
+        # canvas yang sama untuk menyamakan lebar frame isi. Bind tanpa `+`
+        # akan menggantikannya, sehingga `grid_frame` tidak pernah dipaksa
+        # selebar area tampilan dan kolom paling kanan terpotong.
+        self.scroller.canvas.bind("<Configure>", self._on_resize, add="+")
+        self.bind("<Configure>", self._on_resize, add="+")
         self._selection: set[int] = set()
         self._thumb_height = self.THUMB_HEIGHT
         self._drag_from: int | None = None
@@ -125,6 +130,7 @@ class PageGrid(ttk.Frame):
         self._press_pos: tuple[int, int] = (0, 0)
         self._drag_moved = False
         self._suppress = False
+        self._enabled = True
 
     # ------------------------------------------------------------- geometry
 
@@ -159,7 +165,13 @@ class PageGrid(ttk.Frame):
             row, col = divmod(index, columns)
             cell.grid(row=row, column=col, padx=self.PAD_X, pady=self.PAD_Y, sticky="nsew")
 
+        # Hanya kolom yang benar-benar dipakai yang boleh dikonfigurasi.
+        # Kalau seluruh `COLUMNS_MAX` diberi `uniform` + `minsize`, frame jadi
+        # lebih lebar daripada area tampilan, dan karena tidak ada scrollbar
+        # horizontal, sel di kolom paling kanan terpotong tanpa jalan scrolling.
         for col in range(self.COLUMNS_MAX):
+            self.grid_frame.columnconfigure(col, weight=0, minsize=0, uniform="")
+        for col in range(columns):
             self.grid_frame.columnconfigure(col, weight=1, uniform="cols", minsize=cell_width)
         for row in range((len(self._cells) + columns - 1) // columns):
             self.grid_frame.rowconfigure(row, weight=0)
@@ -224,10 +236,16 @@ class PageGrid(ttk.Frame):
         photo_slot.bind("<B1-Motion>", self._on_motion)
         photo_slot.bind("<ButtonRelease-1>", self._on_release)
         photo_slot.bind("<Button-3>", self._on_right)
+        # `photo_slot` dan `badge` menutupi seluruh isi sel, jadi event klik
+        # tidak pernah sampai ke `outer`. Tanpa binding yang sama di sini,
+        # klik ganda di area thumbnail tidak akan pernah memanggil
+        # `on_activate`.
+        photo_slot.bind("<Double-Button-1>", self._on_double)
         badge.bind("<ButtonPress-1>", self._on_press)
         badge.bind("<B1-Motion>", self._on_motion)
         badge.bind("<ButtonRelease-1>", self._on_release)
         badge.bind("<Button-3>", self._on_right)
+        badge.bind("<Double-Button-1>", self._on_double)
 
         return outer
 
@@ -254,6 +272,11 @@ class PageGrid(ttk.Frame):
         if image is not None:
             label.configure(image=image)
             state["photo"] = image
+        else:
+            # Render gagal: gambar lama harus dibuang, kalau tidak sel ini
+            # masih menampilkan isi halaman sebelumnya.
+            label.configure(image=None)
+            state["photo"] = None
 
         marks = []
         if selected:
@@ -304,6 +327,8 @@ class PageGrid(ttk.Frame):
         return best
 
     def _on_press(self, event: tk.Event) -> None:
+        if not self._enabled:
+            return
         cell = self._event_cell(event)
         if cell is None:
             return
@@ -324,7 +349,7 @@ class PageGrid(ttk.Frame):
         return widget  # type: ignore[return-value]
 
     def _on_motion(self, event: tk.Event) -> None:
-        if self._drag_from is None:
+        if not self._enabled or self._drag_from is None:
             return
         dx = event.x_root - self._press_pos[0]
         dy = event.y_root - self._press_pos[1]
@@ -356,14 +381,40 @@ class PageGrid(ttk.Frame):
                 self.on_select(cell._page_state["index"], event)  # type: ignore[attr-defined]
 
     def _on_double(self, event: tk.Event) -> None:
+        if not self._enabled:
+            return
         cell = self._event_cell(event)
         if cell is not None:
             self.on_activate(cell._page_state["index"])  # type: ignore[attr-defined]
 
     def _on_right(self, event: tk.Event) -> None:
+        if not self._enabled:
+            return
         cell = self._event_cell(event)
         if cell is not None:
             self.on_context(cell._page_state["index"], event)  # type: ignore[attr-defined]
+
+    # -------------------------------------------------------------- status
+
+    def set_enabled(self, enabled: bool) -> None:
+        """Aktif/nonaktifkan seluruh interaksi grid.
+
+        Ini bukan sekadar retval visual: worker OCR dan simpan membaca
+        `pymupdf.Document` milik proyek dari thread lain, sedangkan menghapus
+        halaman bisa menutup dokumen itu lewat `Project._prune_sources()`.
+        Menonaktifkan grid mencegah use-after-free di libmupdf selama proses
+        background berjalan.
+        """
+        self._enabled = enabled
+        self.configure(cursor="" if enabled else "watch")
+        for cell in self._cells:
+            try:
+                cell.configure(cursor="fleur" if enabled else "watch")
+                cell._photo_label.configure(  # type: ignore[attr-defined]
+                    cursor="fleur" if enabled else "watch"
+                )
+            except tk.TclError:
+                pass
 
     # ------------------------------------------------------------ selection
 

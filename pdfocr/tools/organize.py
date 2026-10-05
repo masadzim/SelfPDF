@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
-import tempfile
 
 import pymupdf
 from PIL import Image
@@ -99,10 +97,28 @@ def remove_pages(inputs, params, out_path, progress=None) -> ToolOutcome:
 
     doc = open_pdf(inputs[0])
     try:
-        pages = parse_page_range(params.get("ranges", ""), doc.page_count)
+        # Unlike other tools, an empty range here must NOT mean "all pages".
+        # Remove Pages is destructive, and its field help says empty = nothing
+        # removed; letting it mean "all pages" deletes the whole document.
+        # So: empty = no-op with an explanation, not an error.
+        text = (params.get("ranges", "") or "").strip()
+        if not text:
+            return ToolOutcome(
+                output="",
+                summary="Tidak ada halaman yang dihapus.",
+                warnings=[
+                    "Rentang halaman masih kosong, jadi tidak ada yang dihapus.\n"
+                    "Tulis halaman yang mau dibuang, contoh: 1, 3-5 atau 2-4, 7."
+                ],
+            )
+
+        pages = parse_page_range(text, doc.page_count)
         keep = [i for i in range(doc.page_count) if i not in set(pages)]
         if not keep:
-            raise ToolError("Semua halaman dihapus — tidak ada yang tersisa.")
+            raise ToolError(
+                "Semua halaman akan dihapus, jadi tidak ada yang tersisa.\n"
+                "Kurangi halaman yang dihapus, contoh: 1, 3-5."
+            )
 
         out = pymupdf.open()
         first = 0

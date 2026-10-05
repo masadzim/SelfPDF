@@ -12,13 +12,11 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Optional
+from typing import Callable
 
 from .app_colors import (
     get_theme,
-    SPACE_2, SPACE_3,
     MENU_HEIGHT,
-    DROP_FONT,
 )
 
 # Command entry for menu items and command palette
@@ -188,7 +186,10 @@ class CommandPalette(tk.Toplevel):
             exportselection=False,
         )
         self.listbox.pack(fill="both", expand=True)
-        self.listbox.bind("<Double-Button-1>", lambda e: self._execute_selected())
+        # Hanya `ButtonRelease-1` yang memicu. Kalau `Double-Button-1` juga
+        # dipasang, satu klik ganda memicu tiga kali (satu release biasa +
+        # release kedua + event double), sehingga item berbahaya seperti
+        # "Keluar" atau "Kosongkan Proyek" dieksekusi berulang.
         self.listbox.bind("<ButtonRelease-1>", lambda e: self._execute_selected())
 
         self.search_var.trace_add("write", lambda *_: self._filter())
@@ -215,7 +216,7 @@ class CommandPalette(tk.Toplevel):
             if cat:
                 display = f"[{cat}] {label}"
             if shortcut:
-                display += f"  ⌘{shortcut}"  # Use ⌘ for Mac-style, Ctrl for others
+                display += f"  ({shortcut})"
             self.listbox.insert(tk.END, display)
 
     def _update_selection(self) -> None:
@@ -276,66 +277,6 @@ class CommandPalette(tk.Toplevel):
 
 
 def setup_menubar_styles(style: ttk.Style) -> None:
-    """Configure menubar styles."""
-    theme = get_theme()
-
-    style.configure(
-        "Menubar.TFrame",
-        background=theme.bg,
-        relief="flat",
-        borderwidth=0,
-    )
-    style.configure(
-        "Menubar.TMenubutton",
-        background=theme.bg,
-        foreground=theme.fg,
-        relief="flat",
-        borderwidth=0,
-        bordercolor=theme.bg,
-        lightcolor=theme.bg,
-        darkcolor=theme.bg,
-        focuscolor=theme.accent,
-        font=("TkDefaultFont", 10),
-        padding=(14, 6),
-        anchor="w",
-    )
-    style.map(
-        "Menubar.TMenubutton",
-        background=[("active", theme.bg_hover), ("pressed", theme.bg_active), ("disabled", theme.bg)],
-        foreground=[("disabled", theme.fg_subtle), ("active", theme.fg)],
-        bordercolor=[("active", theme.bg_hover), ("pressed", theme.bg_active)],
-        lightcolor=[("active", theme.bg_hover), ("pressed", theme.bg_active)],
-        darkcolor=[("active", theme.bg_hover), ("pressed", theme.bg_active)],
-    )
-
-    style.configure(
-        "MenubarDivider.TFrame",
-        background=theme.border_subtle,
-        relief="flat",
-        borderwidth=0,
-    )
-
-    # Command palette styles
-    style.configure(
-        "Palette.TFrame",
-        background=theme.bg_raised,
-        relief="flat",
-        borderwidth=1,
-        bordercolor=theme.border,
-    )
-    style.configure(
-        "Palette.TEntry",
-        fieldbackground=theme.bg_sunken,
-        foreground=theme.fg,
-        bordercolor=theme.border,
-        lightcolor=theme.border_focus,
-        darkcolor=theme.border_focus,
-        borderwidth=1,
-        padding=(10, 8),
-    )
-
-
-def setup_menubar_styles(style: ttk.Style) -> None:
     """Configure menubar styles using current theme."""
     theme = get_theme()
 
@@ -392,39 +333,6 @@ def setup_menubar_styles(style: ttk.Style) -> None:
         borderwidth=1,
         padding=(10, 8),
     )
-
-    def add_menu(self, label: str, gap_before: int = 0) -> _Submenu:
-        """Tambah satu tombol menu + dropdown-nya, Return pembungkus dropdown.
-
-        `ttk.Menubutton` sudah punya binding bawaan untuk membuka dropdown
-        pada posisi yang tepat, jadi kita tidak perlu memasang command sendiri.
-
-        `gap_before` menambah jarak di sebelah kiri tombol — dipakai untuk
-        memisahkan menu terakhir (mis. Bantuan) dari kelompok lain.
-        """
-        holder = ttk.Frame(self._row, style="Menubar.TFrame")
-        holder.grid(row=0, column=self._columns, sticky="w",
-                    padx=(gap_before if self._columns else 0, 0))
-        self._columns += 1
-
-        button = ttk.Menubutton(holder, text=label, width=0, style="Menubar.TMenubutton")
-        button.pack(side="left", fill="y")
-
-        theme = get_theme()
-
-        menu = tk.Menu(
-            self,
-            tearoff=0,
-            bg=theme.bg_raised,
-            fg=theme.fg,
-            activebackground=theme.accent,
-            activeforeground=theme.fg_inverse,
-            activeborderwidth=0,
-            borderwidth=0,
-            font=DROP_FONT,
-        )
-        button.configure(menu=menu)
-        return _Submenu(menu)
 
 
 def menubar_divider(master: tk.Misc) -> ttk.Frame:

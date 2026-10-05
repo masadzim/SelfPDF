@@ -38,19 +38,20 @@ class ThumbCache:
     ) -> Image.Image:
         """Render satu halaman menjadi thumbnail setinggi `height` piksel.
 
-        Skala dihitung dari tinggi halaman sehingga hasilnya persis `height`
-        piksel, lalu rotasi diterapkan pada gambar. Halaman yang diputar
-        90/270 menjadi lanskap sehingga lebarnya otomatis menyesuaikan.
+        `page.get_pixmap()` sudah menerapkan rotasi `/Rotate` milik dokumen
+        (dan `page.rect` juga sudah memantulkannya), sehingga **hanya** rotasi
+        pilihan user yang perlu dirotasi lagi di atas gambar. `base_rotation`
+        sengaja tidak dipakai di sini — menghitungnya lagi akan memutar
+        thumbnail dua kali dan membuat halaman ber-/Rotate 90 tampil portrait.
         """
-        total_rotation = (base_rotation + rotation) % 360
         page_height = page.rect.height or 1.0
         scale = height / page_height
 
         pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
         image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
 
-        if total_rotation:
-            image = image.rotate(-total_rotation, expand=True, fillcolor="#ffffff")
+        if rotation:
+            image = image.rotate(-rotation, expand=True, fillcolor="#ffffff")
         return image
 
     def get_page(
@@ -61,6 +62,7 @@ class ThumbCache:
         rotation: int,
         base_rotation: int,
         height: int,
+        master: tk.Misc | None = None,
     ) -> ImageTk.PhotoImage:
         key = (doc_key, src_index, rotation, base_rotation, height)
         cached = self._cache.get(key)
@@ -68,11 +70,16 @@ class ThumbCache:
             return cached
 
         image = self.render(page, rotation, base_rotation, height)
-        photo = ImageTk.PhotoImage(image, master=tk._default_root)
+        # `master` eksplisit supaya tidak bergantung pada global
+        # `tk._default_root`, yang belum tentu ada saat pemanggil bukan GUI utama.
+        photo = ImageTk.PhotoImage(image, master=master or tk._default_root)
         photo._source_image = image  # type: ignore[attr-defined]
 
-        if len(self._cache) >= self._max:
-            self._cache.clear()
+        # Saat penuh, buang entri tertua (FIFO) satu per satu, bukan
+        # `clear()` sekaligus — membersihkan semuanya membuat seluruh
+        # thumbnail di-render ulang setiap kali proyek besar di-refresh.
+        while len(self._cache) >= self._max and self._cache:
+            self._cache.pop(next(iter(self._cache)))
         self._cache[key] = photo
         return photo
 

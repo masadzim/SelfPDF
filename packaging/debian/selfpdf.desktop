@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SelfPDF
+GenericName=PDF Editor
+GenericName[en]=PDF Editor
+Comment=OCR, reorder visual, dan 30 perkakas PDF
+Comment[en]=OCR, visual reorder, and 30 PDF tools
+Exec=selfpdf %f
+Icon=selfpdf
+Terminal=false
+Categories=Office;Viewer;Graphics;Utility;
+Keywords=pdf;ocr;merge;split;edit;convert;scan;markdown;
+MimeType=application/pdf;image/png;image/jpeg;image/tiff;
+StartupNotify=true
+StartupWMClass=SelfPDF

@@ -1,0 +1,171 @@
+name: Build
+
+# Tes jalan di tiap push/PR; paket (.exe + .deb) dibuat saat ada tag v* atau
+# saat workflow dijalankan manual.
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tes (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependensi sistem
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-tk tesseract-ocr tesseract-ocr-eng tesseract-ocr-osd \
+            ghostscript libgl1 libglib2.0-0 xvfb
+
+      - name: Install dependensi Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Tes logika inti & perkakas
+        run: python -m pytest tests/ -q
+
+      - name: Tes GUI
+        run: |
+          xvfb-run -a python tests/test_gui.py
+          xvfb-run -a python tests/test_gui_interactive.py
+
+  windows:
+    name: SelfPDF.exe (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Tesseract
+        # Dipakai untuk OCR saat aplikasi berjalan, bukan saat build.
+        run: choco install tesseract --no-progress -y
+
+      - name: Install dependensi Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+
+      - name: Buat icon.ico
+        run: |
+          python -c "from PIL import Image; im=Image.open('assets/icon.png').convert('RGBA'); im.save('assets/icon.ico', format='ICO', sizes=[(s,s) for s in (16,24,32,48,64,128,256)])"
+
+      - name: Build .exe
+        shell: bash
+        run: ./packaging/build_exe.sh
+
+      - name: Smoke test .exe (start lalu tutup)
+        shell: powershell
+        run: |
+          # Cek binary benar-benar bisa start, bukan hanya bisa dibangun.
+          $p = Start-Process -FilePath "dist\SelfPDF.exe" -PassThru
+          Start-Sleep -Seconds 25
+          if ($p.HasExited) {
+            Write-Error "SelfPDF.exe langsung keluar (kode $($p.ExitCode))"
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "SelfPDF.exe tetap berjalan 25 detik -> OK"
+
+      - name: Unggah SelfPDF.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: SelfPDF-windows
+          path: dist/SelfPDF.exe
+          if-no-files-found: error
+
+  linux:
+    name: selfpdf.deb (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependensi build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev fakeroot libgl1 libglib2.0-0
+
+      - name: Siapkan virtualenv
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+          .venv/bin/pip install pyinstaller
+
+      - name: Build .deb
+        run: ./packaging/build_deb.sh
+
+      - name: Verifikasi .deb
+        run: |
+          DEB=$(ls build/deb/*.deb)
+          echo "== info =="
+          dpkg-deb --info "$DEB"
+          echo "== isi =="
+          dpkg-deb --contents "$DEB" | head -20
+
+      - name: Smoke test isi .deb
+        run: |
+          set -e
+          rm -rf /tmp/debcheck && mkdir -p /tmp/debcheck
+          dpkg-deb -x build/deb/*.deb /tmp/debcheck
+          test -x /tmp/debcheck/opt/selfpdf/SelfPDF
+          test -x /tmp/debcheck/usr/bin/selfpdf
+          timeout 25 xvfb-run -a /tmp/debcheck/opt/selfpdf/SelfPDF || code=$?
+          if [ "${code:-0}" != "124" ] && [ "${code:-0}" != "143" ]; then
+            echo "Binary .deb keluar lebih awal (kode ${code:-0})"; exit 1
+          fi
+          echo "Binary .deb tetap berjalan 25 detik -> OK"
+
+      - name: Unggah selfpdf.deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: selfpdf-linux
+          path: build/deb/*.deb
+          if-no-files-found: error
+
+  release:
+    name: Rilis
+    needs: [windows, linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Siapkan nama artefak
+        run: |
+          find artifacts -name "*.exe" -exec mv {} SelfPDF-Windows.exe \;
+          find artifacts -name "*.deb"  -exec mv {} SelfPDF-Linux.deb \;
+
+      - name: Buat GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SelfPDF-Windows.exe
+            SelfPDF-Linux.deb
+          generate_release_notes: true
