@@ -75,7 +75,7 @@ Depends: libc6, libglib2.0-0, libx11-6, libtk8.6
 Recommends: tesseract-ocr, tesseract-ocr-eng, ghostscript, libreoffice
 Installed-Size: ${INSTALLED_SIZE}
 Maintainer: SelfPDF Contributors <support@adzim.my.id>
-Homepage: https://github.com/masadzim/SelfPDF-Desktop
+Homepage: https://github.com/masadzim/SelfPDF
 Description: OCR, reorder visual, dan 30 perkakas PDF
  SelfPDF menggabungkan beberapa PDF secara visual (seret thumbnail untuk
  mengurutkan ulang), menjalankan OCR English, dan menyimpan hasilnya sebagai

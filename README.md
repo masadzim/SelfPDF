@@ -21,6 +21,11 @@ bar menu berisi 30 perkakas PDF.
   pencarian di seluruh hasil OCR.
 - **Putar, duplikat, hapus** halaman (halaman dengan badge hijau sudah punya teks OCR).
 - **Tiga mode simpan**: *Searchable* (teks tak terlihat), *Image-only* (rata), *Original*.
+- **Pemeriksaan pembaruan** — saat dibuka, aplikasi mengecek rilis terbaru di GitHub
+  (diam-diam, satu kali per sesi). Kalau ada versi lebih baru, muncul dialog
+  notifikasi dengan catatan rilis dan tombol unduh. Bisa juga dipanggil manual
+  lewat menu **Bantuan → Periksa Pembaruan…**. Tanpa jaringan, pemeriksaan
+  gagal diam-diam — tidak ada error, tidak ada telemetri.
 
 ## Perkakas PDF
 

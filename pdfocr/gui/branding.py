@@ -27,9 +27,13 @@ import tempfile
 import tkinter as tk
 from typing import Optional
 
+from .. import __version__
+
 APP_NAME = "SelfPDF"
 APP_TAGLINE = "Make simple to use"
-APP_VERSION = "1.1.0"
+# Satu sumber kebenaran versi: `pdfocr.__init__`. Jangan disalin manual —
+# jalur pembaruan (pdfocr/update.py) membandingkan versi dari sana.
+APP_VERSION = __version__
 
 # Tautan donasi & dukungan. Satu sumber kebenaran untuk dialog Tentang.
 # Nilai diambil dari SUPPORT.md proyek BisikChat (project selftdev/bisikchat).

@@ -184,6 +184,7 @@ class MainWindow(tk.Tk):
         self._worker: threading.Thread | None = None
         self._jobs: list[OcrJob] = []
         self._lockable: list[tk.Misc] = []
+        self._update_busy = False
 
         self.status_var = tk.StringVar(value="Siap. Tambahkan file PDF untuk mulai.")
         self._mode_key = SAVE_SEARCHABLE
@@ -199,6 +200,9 @@ class MainWindow(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(80, self._drain_events)
         self.after(120, self._check_tesseract)
+        # Pemeriksaan pembaruan diam-diam: cukup satu kali per sesi, di thread
+        # terpisah, jadi startup tidak menunggu jaringan.
+        self.after(2500, self._check_updates_on_start)
 
     # ------------------------------------------------------------------ header
 
@@ -277,9 +281,11 @@ class MainWindow(tk.Tk):
         # Help menu
         help_menu = bar.add_menu("Bantuan")
         help_menu.add_command("Cara Pakai", self._show_help, "F1")
+        help_menu.add_command("Periksa Pembaruan…", self._check_updates_manual)
         help_menu.add_command("Tentang", self._show_about)
 
         bar.register_command("Bantuan", "Cara Pakai", self._show_help, "F1", "help-circle")
+        bar.register_command("Bantuan", "Periksa Pembaruan…", self._check_updates_manual, "", "refresh-cw")
         bar.register_command("Bantuan", "Tentang", self._show_about, "", "info")
 
         self._menubar = bar
@@ -485,6 +491,46 @@ class MainWindow(tk.Tk):
         self.clipboard_clear()
         self.clipboard_append(SUPPORT_EMAIL)
         self.set_status(f"Email support disalin: {SUPPORT_EMAIL}")
+
+    # ------------------------------------------------------------- pembaruan
+
+    def _check_updates_on_start(self) -> None:
+        """Pemeriksaan diam-diam saat aplikasi dibuka.
+
+        Hasilnya lewat queue (bukan `messagebox` langsung dari thread) supaya
+        hanya dialog versi lebih baru yang muncul; kalau sudah terbaru atau
+        jaringan mati, tidak ada apa-apa.
+        """
+        if self._update_busy:
+            return
+        threading.Thread(
+            target=self._update_worker, args=(False,), daemon=True
+        ).start()
+
+    def _check_updates_manual(self) -> None:
+        """Menu Bantuan → Periksa Pembaruan: selalu memberi umpan balik."""
+        if self._update_busy:
+            self.set_status("Pemeriksaan pembaruan sedang berjalan…")
+            return
+        self.set_status("Memeriksa pembaruan…")
+        threading.Thread(
+            target=self._update_worker, args=(True,), daemon=True
+        ).start()
+
+    def _update_worker(self, manual: bool) -> None:
+        from .. import __version__
+        from ..update import check_for_updates
+
+        self._update_busy = True
+        try:
+            status, info = check_for_updates(__version__)
+        except Exception:  # noqa: BLE001 - jaringan bisa mati kapan saja
+            from ..update import STATUS_UNAVAILABLE
+
+            status, info = STATUS_UNAVAILABLE, None
+        finally:
+            self._update_busy = False
+        self.events.put(("update", manual, status, info))
 
     # ------------------------------------------------------------------- body
 
@@ -964,6 +1010,91 @@ class MainWindow(tk.Tk):
                 fg=WARN,
             )
 
+    def _handle_update_result(self, manual: bool, status: str, info) -> None:
+        """Terapkan hasil `check_for_updates` di thread GUI.
+
+        Pemeriksaan otomatis (bukan dari menu) hanya memberi kabar bila memang
+        ada versi lebih baru — tidak ada dialog "sudah terbaru" yang tiba-tiba
+        muncul saat aplikasi dibuka.
+        """
+        from ..update import STATUS_CURRENT, STATUS_UNAVAILABLE, STATUS_UPDATE
+
+        if status == STATUS_UPDATE and info is not None:
+            self.set_status(f"Pembaruan tersedia: {info.version}")
+            self._show_update_dialog(info)
+            return
+        if not manual:
+            return
+        if status == STATUS_CURRENT:
+            messagebox.showinfo(
+                "Pembaruan", "SelfPDF sudah versi terbaru.", parent=self
+            )
+        else:
+            messagebox.showwarning(
+                "Pembaruan",
+                "Tidak bisa memeriksa pembaruan.\n"
+                "Periksa koneksi internet, lalu coba lagi.",
+                parent=self,
+            )
+
+    def _show_update_dialog(self, info) -> None:
+        """Dialog non-modal: versi lebih baru sudah tersedia.
+
+        Sengaja tanpa `grab_set` — pengguna boleh menutup, menunda, atau
+        tetap bekerja dengan jendela utama sementara dialog ini terbuka.
+        """
+        from .. import __version__
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Pembaruan Tersedia")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+
+        outer = ttk.Frame(dialog, style="Panel.TFrame", padding=18)
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+
+        ttk.Label(outer, text=f"Pembaruan {info.version} tersedia",
+                  style="ToolTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text=f"Versi Anda: {__version__}",
+                  style="DimOnPanel.TLabel").grid(row=1, column=0, sticky="w",
+                                                  pady=(2, 0))
+
+        notes = (info.notes or "").strip()
+        if notes:
+            body = tk.Text(
+                outer, wrap="word", height=10, width=56,
+                bg="#161a21", fg=FG, insertbackground=FG, relief="flat",
+                highlightthickness=1, highlightbackground="#3a4250",
+                font=("TkFixedFont", 9), padx=8, pady=8,
+            )
+            body.insert("1.0", notes[:2000])
+            body.configure(state="disabled")
+            body.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+
+        buttons = ttk.Frame(outer, style="Panel.TFrame")
+        buttons.grid(row=3, column=0, sticky="ew", pady=(16, 0))
+        ttk.Button(buttons, text="Unduh Sekarang", style="Accent.TButton",
+                   command=lambda: self._open_update(info)).pack(side="left")
+        ttk.Button(buttons, text="Nanti Saja", style="Panel.TButton",
+                   command=dialog.destroy).pack(side="left", padx=(8, 0))
+
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - dialog.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    def _open_update(self, info) -> None:
+        """Buka halaman unduh rilis di browser default."""
+        url = info.download_url or info.page_url
+        try:
+            opened = webbrowser.open_new_tab(url)
+        except Exception:  # noqa: BLE001
+            opened = False
+        if not opened:
+            messagebox.showinfo("Pembaruan", url, parent=self)
+
     def _start_ocr(self, scope: str | None) -> None:
         """Pintasan OCR dari tombol/menubar: `None` = semua, `"selected"`.
 
@@ -1108,6 +1239,9 @@ class MainWindow(tk.Tk):
                             tone="ok",
                             outputs=[path],
                         )
+                elif kind == "update":
+                    manual, status, info = payload
+                    self._handle_update_result(manual, status, info)
         except queue.Empty:
             pass
         self.after(80, self._drain_events)
