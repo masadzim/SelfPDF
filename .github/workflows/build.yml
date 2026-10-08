@@ -28,7 +28,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             python3-tk tesseract-ocr tesseract-ocr-eng tesseract-ocr-osd \
-            ghostscript libgl1 libglib2.0-0 xvfb
+            ghostscript libgl1 libglib2.0-0 xvfb \
+            libreoffice-writer
 
       - name: Install dependensi Python
         run: |

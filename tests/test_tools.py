@@ -31,6 +31,19 @@ from pdfocr.tools.edit import parse_field_values  # noqa: E402
 from pdfocr.tools.to_pdf import _markdown_to_html  # noqa: E402
 
 
+def require_libreoffice() -> None:
+    """Lewati tes bila LibreOffice tidak terpasang.
+
+    Dipakai tes yang benar-benar memanggil `soffice` (HTML/Word → PDF).
+    Tanpa guard ini tes gagal dengan `ToolError` di mesin yang sengaja
+    tidak memasang LibreOffice — lokal maupun di CI.
+    """
+    import shutil
+
+    if not shutil.which("soffice"):
+        pytest.skip("LibreOffice tidak terpasang")
+
+
 # ------------------------------------------------------------------- fixtures
 
 def make_pdf(path: str, pages: int = 4, text: str = "Rahasia XYZ") -> str:
@@ -581,6 +594,7 @@ def test_images_to_pdf(tmp_path):
 
 
 def test_html_to_pdf(tmp_path):
+    require_libreoffice()
     html = tmp_path / "p.html"
     html.write_text("<h1>Judul</h1><p>Isi.</p>", encoding="utf-8")
     outcome, out = run("html2pdf", [str(html)], out_path=str(tmp_path / "h.pdf"),
@@ -589,10 +603,7 @@ def test_html_to_pdf(tmp_path):
 
 
 def test_office_to_pdf_word(tmp_path):
-    import shutil
-
-    if not shutil.which("soffice"):
-        pytest.skip("LibreOffice tidak terpasang")
+    require_libreoffice()
     from docx import Document
 
     docx_path = str(tmp_path / "d.docx")
@@ -698,6 +709,7 @@ def test_markdown_to_html_interpolates_body(tmp_path):
 
 
 def test_html_to_pdf_from_markdown(tmp_path):
+    require_libreoffice()
     src = tmp_path / "d.md"
     src.write_text("# Dari Markdown\n\nIsi paragraf.\n", encoding="utf-8")
     outcome, out = run("html2pdf", [str(src)],
